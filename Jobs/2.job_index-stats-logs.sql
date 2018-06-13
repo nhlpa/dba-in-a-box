@@ -12,6 +12,30 @@ alter procedure dbo.sp_IndexStatsLogs
 as
   set nocount on;
 
+  if object_id('dbo.CommandLog') is null
+    begin
+      create table dbo.CommandLog
+      (
+        ID int identity(1, 1) not null
+        ,DatabaseName sysname null
+        ,SchemaName sysname null
+        ,ObjectName sysname null
+        ,ObjectType char(2) null
+        ,IndexName sysname null
+        ,IndexType tinyint null
+        ,StatisticsName sysname null
+        ,PartitionNumber int null
+        ,ExtendedInfo xml null
+        ,Command nvarchar(max) not null
+        ,CommandType nvarchar(60) not null
+        ,StartTime datetime not null
+        ,EndTime datetime null
+        ,ErrorNumber int null
+        ,ErrorMessage nvarchar(max) null
+        ,constraint PK_CommandLog primary key clustered (ID asc)
+      );
+    end;
+
   -- rebuild indexes for user databases
   execute dbo.IndexOptimize
     @Databases = 'USER_DATABASES'
@@ -19,7 +43,8 @@ as
     ,@FragmentationMedium = 'INDEX_REORGANIZE,INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE'
     ,@FragmentationHigh = 'INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE'
     ,@FragmentationLevel1 = 5
-    ,@FragmentationLevel2 = 30;
+    ,@FragmentationLevel2 = 30
+    ,@LogToTable = 'Y';
 
   -- update column statistics for user databases
   execute dbo.IndexOptimize
@@ -59,24 +84,22 @@ declare @scheduleName varchar(50) = '[INDEX-STATS-LOGS - Weekly]';
 -- category
 if not exists (
   select
-  name
-from
-  msdb.dbo.syscategories
-where
+    name
+  from
+    msdb.dbo.syscategories
+  where
     name = @categoryName
-  and category_class = 1
+    and category_class = 1
 )
   begin
-  exec msdb.dbo.sp_add_category
+    exec msdb.dbo.sp_add_category
       @class = N'JOB'
       ,@type = N'LOCAL'
       ,@name = @categoryName;
-end;
+  end;
 
 -- schedule
-if not exists (select null
-from msdb.dbo.sysschedules
-where name = @scheduleName)
+if not exists (select null from msdb.dbo.sysschedules where name = @scheduleName)
   exec msdb.dbo.sp_add_schedule
     @schedule_name = @scheduleName
     ,@enabled = 1
@@ -92,14 +115,12 @@ where name = @scheduleName)
     ,@active_end_time = 235959;
 
 -- job
-if exists (select null
-from msdb.dbo.sysjobs
-where name = @jobName)
+if exists (select null from msdb.dbo.sysjobs where name = @jobName)
   begin
-  exec msdb.dbo.sp_delete_job
+    exec msdb.dbo.sp_delete_job
       @job_name = @jobName
       ,@delete_unused_schedule = 0;
-end;
+  end;
 
 exec msdb.dbo.sp_add_job
   @job_name = @jobName
