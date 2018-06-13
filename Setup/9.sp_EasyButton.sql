@@ -8,6 +8,9 @@ Credit: Pim Brouwers
 
 Source: https://github.com/pimbrouwers/sp_EasyButton
 */
+use DBA;
+go
+
 if object_id('dbo.sp_EasyButton') is null
   exec ('create procedure dbo.sp_EasyButton as return 0;');
 go
