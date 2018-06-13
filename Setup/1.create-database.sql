@@ -1,3 +1,8 @@
+/*
+Creates the "DBA" database as a logical container 
+and storage of sp_whoIsActive snapshots (if 
+install-jobs.sql is run).
+*/
 use master;
 go
 

@@ -1,5 +1,7 @@
 /*
-  sp_AnalyzeDatabaseCritical
+sp_AnalyzeDatabaseCritical
+
+Executes sp_Blitz targeting database-specific critial items.
 */
 use DBA;
 go

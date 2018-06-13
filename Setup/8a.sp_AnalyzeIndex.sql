@@ -1,5 +1,7 @@
 /*
-  sp_AnalyzeIndexes
+sp_AnalyzeIndexes
+
+Executes sp_BlitzIndex for all databases, or specific database.
 */
 use DBA;
 go

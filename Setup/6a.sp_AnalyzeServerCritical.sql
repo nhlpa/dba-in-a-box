@@ -1,5 +1,7 @@
 /*
-  sp_AnalyzeServerCritical
+sp_AnalyzeServerCritical
+
+Executes sp_Blitz targeting server-only critical items.
 */
 use DBA;
 go

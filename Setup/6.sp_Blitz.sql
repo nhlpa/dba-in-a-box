@@ -1,7 +1,10 @@
 /*
-  https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_Blitz.sql
-*/
+dbo.sp_Blitz
 
+Credit: Brent Ozar
+
+Source: https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_Blitz.sql
+*/
 use DBA;
 go
 

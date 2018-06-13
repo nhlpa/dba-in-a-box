@@ -1,5 +1,9 @@
 /*
-  https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_BlitzCache.sql
+sp_BlitzCache
+
+Credit: Brent Ozar
+
+Source: https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_BlitzCache.sql
 */
 
 use DBA;

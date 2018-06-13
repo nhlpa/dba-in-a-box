@@ -1,6 +1,9 @@
 /*
-Version 11.30 - December 10, 2017
-http://whoisactive.com/downloads/
+sp_whoIsActive
+
+Credit: Adam Machanic
+
+Source: http://whoisactive.com/downloads/
 */
 use DBA;
 go

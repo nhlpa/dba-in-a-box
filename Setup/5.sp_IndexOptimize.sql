@@ -1,7 +1,10 @@
 /*
-  https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/IndexOptimize.sql
-*/
+IndexOptimize
 
+Credit: Ola Hallengren
+
+Source: https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/IndexOptimize.sql
+*/
 use DBA;
 go
 

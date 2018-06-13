@@ -1,5 +1,9 @@
 /*
-  https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_BlitzIndex.sql
+sp_BlitzIndex
+
+Credit: Brent Ozar
+
+Source: https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_BlitzIndex.sql
 */
 
 use DBA;

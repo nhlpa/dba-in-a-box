@@ -1,3 +1,8 @@
+/*
+Creates the "DBA" database as a logical container 
+and storage of sp_whoIsActive snapshots (if 
+install-jobs.sql is run).
+*/
 use master;
 go
 
@@ -16,8 +21,11 @@ alter database DBA
   modify file (name = DBA_log, filegrowth = 128mb);
 go
 /*
-Version 11.30 - December 10, 2017
-http://whoisactive.com/downloads/
+sp_whoIsActive
+
+Credit: Adam Machanic
+
+Source: http://whoisactive.com/downloads/
 */
 use DBA;
 go
@@ -5296,7 +5304,11 @@ BEGIN;
 END;
 GO
 /*
-  https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/CommandExecute.sql
+CommandExceute
+
+Credit: Ola Hallengren
+
+Source: https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/CommandExecute.sql
 */
 use DBA;
 go
@@ -5512,7 +5524,11 @@ BEGIN
 END
 GO
 /*
-  https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/DatabaseIntegrityCheck.sql
+DatabaseIntegrityCheck
+
+Credit: Ola Hallengren
+
+Source: https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/DatabaseIntegrityCheck.sql
 */
 use DBA;
 go
@@ -6852,9 +6868,12 @@ END
 
 GO
 /*
-  https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/IndexOptimize.sql
-*/
+IndexOptimize
 
+Credit: Ola Hallengren
+
+Source: https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/IndexOptimize.sql
+*/
 use DBA;
 go
 
@@ -8769,9 +8788,12 @@ END
 GO
 
 /*
-  https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_Blitz.sql
-*/
+dbo.sp_Blitz
 
+Credit: Brent Ozar
+
+Source: https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_Blitz.sql
+*/
 use DBA;
 go
 
@@ -17219,7 +17241,9 @@ EXEC [dbo].[sp_Blitz]
     @CheckServerInfo = 1
 */
 /*
-  sp_AnalyzeServerCritical
+sp_AnalyzeServerCritical
+
+Executes sp_Blitz targeting server-only critical items.
 */
 use DBA;
 go
@@ -17237,7 +17261,9 @@ as
     ,@CheckUserDatabaseObjects = 0;
 go
 /*
-  sp_AnalyzeDatabaseCritical
+sp_AnalyzeDatabaseCritical
+
+Executes sp_Blitz targeting database-specific critial items.
 */
 use DBA;
 go
@@ -17256,7 +17282,11 @@ as
     ,@CheckUserDatabaseObjects = 1;
 go
 /*
-  https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_BlitzCache.sql
+sp_BlitzCache
+
+Credit: Brent Ozar
+
+Source: https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_BlitzCache.sql
 */
 
 use DBA;
@@ -23519,7 +23549,11 @@ END; /*Final End*/
 
 GO
 /*
-  https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_BlitzIndex.sql
+sp_BlitzIndex
+
+Credit: Brent Ozar
+
+Source: https://raw.githubusercontent.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/dev/sp_BlitzIndex.sql
 */
 
 use DBA;
@@ -27937,7 +27971,9 @@ BEGIN CATCH
     END CATCH;
 GO
 /*
-  sp_AnalyzeIndexes
+sp_AnalyzeIndexes
+
+Executes sp_BlitzIndex for all databases, or specific database.
 */
 use DBA;
 go
@@ -27957,5 +27993,13 @@ as
     @DatabaseName = @__DatabaseName,
     @GetAllDatabases = 1;
 go
+/*
+sp_EasyButton
+
+One-button server configuration to implement 
+accepted best practices.
+*/
 use DBA;
 go
+
+

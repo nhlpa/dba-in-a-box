@@ -1,5 +1,9 @@
 /*
-  https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/CommandExecute.sql
+CommandExceute
+
+Credit: Ola Hallengren
+
+Source: https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/CommandExecute.sql
 */
 use DBA;
 go

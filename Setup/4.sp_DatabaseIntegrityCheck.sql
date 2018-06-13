@@ -1,5 +1,9 @@
 /*
-  https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/DatabaseIntegrityCheck.sql
+DatabaseIntegrityCheck
+
+Credit: Ola Hallengren
+
+Source: https://raw.githubusercontent.com/olahallengren/sql-server-maintenance-solution/master/DatabaseIntegrityCheck.sql
 */
 use DBA;
 go

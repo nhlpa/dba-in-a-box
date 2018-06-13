@@ -128,6 +128,7 @@ end;
 exec msdb.dbo.sp_add_job
   @job_name = @jobName
   ,@enabled = 1
+  ,@owner_login_name = 'sa'
   ,@description = @jobDescription
   ,@category_name = @categoryName
   ,@notify_level_eventlog = 2
