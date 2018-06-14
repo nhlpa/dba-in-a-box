@@ -1,5 +1,5 @@
 /*
-  sp_CollectWhoIsActive  (run every 60s)
+sp_CollectWhoIsActive  (run every 60s)
 */
 use DBA;
 go
@@ -69,7 +69,7 @@ as
 go
 
 /*
-  WHOISACTIVE JOB
+WHOISACTIVE JOB
 */
 use msdb;
 go

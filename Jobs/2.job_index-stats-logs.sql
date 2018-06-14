@@ -1,5 +1,5 @@
 /*
-  sp_IndexStatsLogs (run daily)
+sp_IndexStatsLogs (run daily)
 */
 use DBA;
 go
@@ -71,7 +71,7 @@ as
 go
 
 /*
-  INDEX-STATS-LOGS job
+INDEX-STATS-LOGS job
 */
 use msdb;
 go

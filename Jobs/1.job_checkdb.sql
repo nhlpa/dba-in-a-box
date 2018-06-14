@@ -1,5 +1,5 @@
 /*
-  sp_CheckDb (run weekly)
+sp_CheckDb (run weekly)
 */
 use DBA;
 go
@@ -19,7 +19,7 @@ as
 go
 
 /*
-  CHECKDB job
+CHECKDB job
 */
 use msdb;
 go
