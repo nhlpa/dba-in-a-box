@@ -1,5 +1,5 @@
 /*
-  sp_CollectWhoIsActive  
+  sp_CollectWhoIsActive  (run every 60s)
 */
 use DBA;
 go

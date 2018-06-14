@@ -1,7 +1,6 @@
 /*
   sp_CheckDb (run weekly)
 */
-
 use DBA;
 go
 

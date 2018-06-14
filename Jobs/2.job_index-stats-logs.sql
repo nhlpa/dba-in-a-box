@@ -12,6 +12,7 @@ alter procedure dbo.sp_IndexStatsLogs
 as
   set nocount on;
 
+  -- create log table
   if object_id('dbo.CommandLog') is null
     begin
       create table dbo.CommandLog
