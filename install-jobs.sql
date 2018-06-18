@@ -118,7 +118,7 @@ go
 
 declare @categoryName varchar(50) = '[MAINTENANCE]';
 declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'CHECKDB';
+declare @jobName varchar(50) = 'DBA_CHECKDB';
 declare @jobDescription varchar(255) = 'CHECKDB on all databases';
 declare @scheduleName varchar(50) = '[CHECKDB - Weekly]';
 
@@ -248,7 +248,7 @@ go
 
 declare @categoryName varchar(50) = '[MAINTENANCE]';
 declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'INDEX-STATS-LOGS';
+declare @jobName varchar(50) = 'DBA_INDEX-STATS-LOGS';
 declare @jobDescription varchar(255) = 'Index maintenance, columns statistics and log cycling.';
 declare @scheduleName varchar(50) = '[INDEX-STATS-LOGS - Weekly]';
 
@@ -355,7 +355,7 @@ go
 
 declare @categoryName varchar(50) = '[MONITOR]';
 declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'WHOISACTIVE';
+declare @jobName varchar(50) = 'DBA_WHOISACTIVE';
 declare @jobDescription varchar(255) = 'Collect snapshot of sp_whoIsActive';
 declare @scheduleName varchar(50) = '[WHOISACTIVE - 60s]';
 
@@ -496,7 +496,7 @@ go
 
 declare @categoryName varchar(50) = '[MONITOR]';
 declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'WAITSTATS';
+declare @jobName varchar(50) = 'DBA_WAITSTATS';
 declare @jobDescription varchar(255) = 'Collect rollups from sys.dm_os_wait_stats';
 declare @scheduleName varchar(50) = '[WAITSTATS - Daily]';
 

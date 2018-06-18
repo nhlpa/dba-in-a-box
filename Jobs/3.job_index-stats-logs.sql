@@ -53,7 +53,7 @@ go
 
 declare @categoryName varchar(50) = '[MAINTENANCE]';
 declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'INDEX-STATS-LOGS';
+declare @jobName varchar(50) = 'DBA_INDEX-STATS-LOGS';
 declare @jobDescription varchar(255) = 'Index maintenance, columns statistics and log cycling.';
 declare @scheduleName varchar(50) = '[INDEX-STATS-LOGS - Weekly]';
 

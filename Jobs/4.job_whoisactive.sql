@@ -34,7 +34,7 @@ go
 
 declare @categoryName varchar(50) = '[MONITOR]';
 declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'WHOISACTIVE';
+declare @jobName varchar(50) = 'DBA_WHOISACTIVE';
 declare @jobDescription varchar(255) = 'Collect snapshot of sp_whoIsActive';
 declare @scheduleName varchar(50) = '[WHOISACTIVE - 60s]';
 

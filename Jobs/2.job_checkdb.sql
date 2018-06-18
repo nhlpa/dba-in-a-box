@@ -26,7 +26,7 @@ go
 
 declare @categoryName varchar(50) = '[MAINTENANCE]';
 declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'CHECKDB';
+declare @jobName varchar(50) = 'DBA_CHECKDB';
 declare @jobDescription varchar(255) = 'CHECKDB on all databases';
 declare @scheduleName varchar(50) = '[CHECKDB - Weekly]';
 

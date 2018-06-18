@@ -64,7 +64,7 @@ go
 
 declare @categoryName varchar(50) = '[MONITOR]';
 declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'WAITSTATS';
+declare @jobName varchar(50) = 'DBA_WAITSTATS';
 declare @jobDescription varchar(255) = 'Collect rollups from sys.dm_os_wait_stats';
 declare @scheduleName varchar(50) = '[WAITSTATS - Daily]';
 
