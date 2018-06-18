@@ -1,7 +1,7 @@
 /*
 Creates the "DBA" database as a logical container 
-and storage of sp_whoIsActive snapshots (if 
-install-jobs.sql is run).
+and storage of sp_whoIsActive snapshots, command 
+log executions and wait stats snapshots
 */
 use master;
 go
@@ -20,7 +20,6 @@ go
 alter database DBA
   modify file (name = DBA_log, filegrowth = 128mb);
 go
-
 /*
 sp_whoIsActive
 

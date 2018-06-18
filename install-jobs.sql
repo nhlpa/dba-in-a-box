@@ -1,4 +1,96 @@
 /*
+Creates the tables for storage of:
+- sp_whoisactive snapshots
+- wait stats
+- index rebuilds
+*/
+use DBA;
+go
+
+if object_id('dbo.CommandLog') is not null
+  drop table dbo.CommandLog;
+
+create table dbo.CommandLog
+(
+  ID int identity(1, 1) not null
+  ,DatabaseName sysname null
+  ,SchemaName sysname null
+  ,ObjectName sysname null
+  ,ObjectType char(2) null
+  ,IndexName sysname null
+  ,IndexType tinyint null
+  ,StatisticsName sysname null
+  ,PartitionNumber int null
+  ,ExtendedInfo xml null
+  ,Command nvarchar(max) not null
+  ,CommandType nvarchar(60) not null
+  ,StartTime datetime not null
+  ,EndTime datetime null
+  ,ErrorNumber int null
+  ,ErrorMessage nvarchar(max) null
+  ,constraint PK_CommandLog primary key(ID asc)
+);
+go
+
+if object_id('dbo.WaitStats') is not null
+  drop table dbo.WaitStats;
+
+create table dbo.WaitStats
+(
+  Id int identity(1, 1) not null
+  ,CollectionTime smalldatetime
+  ,WaitType nvarchar(100)
+  ,WaitTimeSeconds decimal(16, 2)
+  ,CpuDelaySeconds decimal(16, 2)
+  ,SignalWaitSeconds decimal(16, 2)
+  ,WaitingTasks int
+  ,WaitPercent decimal(5, 2)
+  ,AvgWaitTimeSeconds decimal(16, 2)
+  ,AvgCpuDelaySeconds decimal(16, 2)
+  ,AverageSignalWaitSeconds decimal(16, 2)
+  ,constraint pk_waitstats primary key(Id asc)
+);
+go
+
+if object_id('dbo.WhoIsActive') is not null
+  drop table dbo.WhoIsActive;
+
+create table dbo.WhoIsActive
+(
+  [dd hh:mm:ss.mss] varchar(8000) null
+  ,session_id smallint not null
+  ,sql_text xml null
+  ,sql_command xml null
+  ,login_name nvarchar(128) not null
+  ,wait_info nvarchar(4000) null
+  ,tran_log_writes nvarchar(4000) null
+  ,CPU varchar(30) null
+  ,tempdb_allocations varchar(30) null
+  ,tempdb_current varchar(30) null
+  ,blocking_session_id smallint null
+  ,reads varchar(30) null
+  ,writes varchar(30) null
+  ,physical_reads varchar(30) null
+  ,query_plan xml null
+  ,used_memory varchar(30) null
+  ,status varchar(30) not null
+  ,tran_start_time datetime null
+  ,open_tran_count varchar(30) null
+  ,percent_complete varchar(30) null
+  ,host_name nvarchar(128) null
+  ,database_name nvarchar(128) null
+  ,program_name nvarchar(128) null
+  ,start_time datetime not null
+  ,login_time datetime null
+  ,request_id int null
+  ,collection_time datetime not null
+);
+go
+
+create clustered index cx_whoisactive_collectiontime
+  on dbo.WhoIsActive(collection_time asc);
+go
+/*
 sp_CheckDb (run weekly)
 */
 use DBA;
@@ -114,31 +206,6 @@ go
 alter procedure dbo.sp_IndexStatsLogs
 as
   set nocount on;
-
-  -- create log table
-  if object_id('dbo.CommandLog') is null
-    begin
-      create table dbo.CommandLog
-      (
-        ID int identity(1, 1) not null
-        ,DatabaseName sysname null
-        ,SchemaName sysname null
-        ,ObjectName sysname null
-        ,ObjectType char(2) null
-        ,IndexName sysname null
-        ,IndexType tinyint null
-        ,StatisticsName sysname null
-        ,PartitionNumber int null
-        ,ExtendedInfo xml null
-        ,Command nvarchar(max) not null
-        ,CommandType nvarchar(60) not null
-        ,StartTime datetime not null
-        ,EndTime datetime null
-        ,ErrorNumber int null
-        ,ErrorMessage nvarchar(max) null
-        ,constraint PK_CommandLog primary key clustered (ID asc)
-      );
-    end;
 
   -- rebuild indexes for user databases
   execute dbo.IndexOptimize
@@ -266,60 +333,18 @@ alter procedure dbo.sp_CollectWhoIsActive
 as
   set nocount on;
 
-  declare
-    @retention int = 7
-    ,@destination_table varchar(500) = 'WhoIsActive'
-    ,@destination_database sysname = 'DBA'
-    ,@schema varchar(max)
-    ,@SQL nvarchar(4000)
-    ,@parameters nvarchar(500)
-    ,@exists bit;
+  declare @databaseName varchar(128) = 'WhoIsActive';
+  declare @retention int = 7;
 
-  set @destination_table = @destination_database + '.dbo.' + @destination_table;
-
-  -- create the logging table
-  if object_id(@destination_table) is null
-    begin;
-      exec dbo.sp_WhoIsActive
-        @get_transaction_info = 1
-        ,@get_outer_command = 1
-        ,@get_plans = 1
-        ,@return_schema = 1
-        ,@schema = @schema output;
-
-      set @schema = replace(@schema, '<table_name>', @destination_table);
-
-      exec (@schema);
-    end;
-
-  -- create clustered index
-  set @SQL = 'USE ' + quotename(@destination_database) + '; IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(@destination_table) AND name = N''cx_collection_time'') SET @exists = 0';
-  set @parameters = N'@destination_table varchar(500), @exists bit OUTPUT';
-
-  exec sys.sp_executesql
-    @SQL
-    ,@parameters
-    ,@destination_table = @destination_table
-    ,@exists = @exists output;
-
-  if @exists = 0
-    begin;
-      set @SQL = 'CREATE CLUSTERED INDEX cx_collection_time ON ' + @destination_table + '(collection_time ASC)';
-
-      exec (@SQL);
-    end;
-
-  -- collect activity
+  -- capture
   exec dbo.sp_WhoIsActive
     @get_transaction_info = 1
     ,@get_outer_command = 1
     ,@get_plans = 1
-    ,@destination_table = @destination_table;
+    ,@destination_table = databaseName;
 
   -- cleanup
-  set @SQL = 'DELETE FROM ' + @destination_table + ' WHERE collection_time < DATEADD(day, -' + cast(@retention as varchar(10)) + ', GETDATE());';
-
-  exec (@SQL);
+  delete from WhoIsActive where collection_time < dateadd(day, -(@retention), getdate());
 go
 
 /*
@@ -421,23 +446,6 @@ as
 
   declare @retention int = 7;
 
-  if object_id('dbo.WaitStats') is null
-    begin
-      create table dbo.WaitStats
-      (
-        collection_time smalldatetime
-        ,wait_type nvarchar(100)
-        ,wait_time_s decimal(16, 2)
-        ,cpu_delay_s decimal(16, 2)
-        ,signal_wait_time_s decimal(16, 2)
-        ,waiting_tasks int
-        ,wait_percent decimal(5, 2)
-        ,avg_wait_time_s decimal(16, 2)
-        ,avg_cpu_delay_s decimal(16, 2)
-        ,avg_signal_wait_time_s decimal(16, 2)
-      );
-    end;
-
   -- capture
   with waits as (
     select
@@ -456,16 +464,16 @@ as
   )
   insert into dbo.WaitStats
   select
-    cast(getdate() as smalldatetime) as collection_time
-    ,max(w1.wait_type) as wait_type
-    ,cast(max(w1.wait_time_s) as decimal(16, 2)) as wait_time_s
-    ,cast(max(w1.cpu_delay_s) as decimal(16, 2)) as cpu_delay_s
-    ,cast(max(w1.signal_wait_time_s) as decimal(16, 2)) as signal_wait_time_s
-    ,max(w1.waiting_tasks) as waiting_tasks
-    ,cast(max(w1.wait_percent) as decimal(5, 2)) as wait_percent
-    ,cast((max(w1.wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4)) as avg_wait_time_s
-    ,cast((max(w1.cpu_delay_s) / max(w1.waiting_tasks)) as decimal(16, 4)) as avg_cpu_delay_s
-    ,cast((max(w1.signal_wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4)) as avg_signal_wait_time_s
+    cast(getdate() as smalldatetime)
+    ,max(w1.wait_type)
+    ,cast(max(w1.wait_time_s) as decimal(16, 2))
+    ,cast(max(w1.cpu_delay_s) as decimal(16, 2))
+    ,cast(max(w1.signal_wait_time_s) as decimal(16, 2))
+    ,max(w1.waiting_tasks)
+    ,cast(max(w1.wait_percent) as decimal(5, 2))
+    ,cast((max(w1.wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4))
+    ,cast((max(w1.cpu_delay_s) / max(w1.waiting_tasks)) as decimal(16, 4))
+    ,cast((max(w1.signal_wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4))
   from
     waits w1
   inner join
@@ -477,7 +485,7 @@ as
     sum(w2.wait_percent) - max(w1.wait_percent) < 95; -- percentage threshold
 
   -- cleanup
-  delete from dbo.WaitStats where collection_time < dateadd(day, -(@retention), getdate());
+  delete from dbo.WaitStats where CollectionTime < dateadd(day, -(@retention), getdate());
 go
 
 /*

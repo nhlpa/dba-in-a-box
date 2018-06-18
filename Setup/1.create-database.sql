@@ -20,4 +20,3 @@ go
 alter database DBA
   modify file (name = DBA_log, filegrowth = 128mb);
 go
-

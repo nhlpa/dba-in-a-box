@@ -14,23 +14,6 @@ as
 
   declare @retention int = 7;
 
-  if object_id('dbo.WaitStats') is null
-    begin
-      create table dbo.WaitStats
-      (
-        collection_time smalldatetime
-        ,wait_type nvarchar(100)
-        ,wait_time_s decimal(16, 2)
-        ,cpu_delay_s decimal(16, 2)
-        ,signal_wait_time_s decimal(16, 2)
-        ,waiting_tasks int
-        ,wait_percent decimal(5, 2)
-        ,avg_wait_time_s decimal(16, 2)
-        ,avg_cpu_delay_s decimal(16, 2)
-        ,avg_signal_wait_time_s decimal(16, 2)
-      );
-    end;
-
   -- capture
   with waits as (
     select
@@ -49,16 +32,16 @@ as
   )
   insert into dbo.WaitStats
   select
-    cast(getdate() as smalldatetime) as collection_time
-    ,max(w1.wait_type) as wait_type
-    ,cast(max(w1.wait_time_s) as decimal(16, 2)) as wait_time_s
-    ,cast(max(w1.cpu_delay_s) as decimal(16, 2)) as cpu_delay_s
-    ,cast(max(w1.signal_wait_time_s) as decimal(16, 2)) as signal_wait_time_s
-    ,max(w1.waiting_tasks) as waiting_tasks
-    ,cast(max(w1.wait_percent) as decimal(5, 2)) as wait_percent
-    ,cast((max(w1.wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4)) as avg_wait_time_s
-    ,cast((max(w1.cpu_delay_s) / max(w1.waiting_tasks)) as decimal(16, 4)) as avg_cpu_delay_s
-    ,cast((max(w1.signal_wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4)) as avg_signal_wait_time_s
+    cast(getdate() as smalldatetime)
+    ,max(w1.wait_type)
+    ,cast(max(w1.wait_time_s) as decimal(16, 2))
+    ,cast(max(w1.cpu_delay_s) as decimal(16, 2))
+    ,cast(max(w1.signal_wait_time_s) as decimal(16, 2))
+    ,max(w1.waiting_tasks)
+    ,cast(max(w1.wait_percent) as decimal(5, 2))
+    ,cast((max(w1.wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4))
+    ,cast((max(w1.cpu_delay_s) / max(w1.waiting_tasks)) as decimal(16, 4))
+    ,cast((max(w1.signal_wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4))
   from
     waits w1
   inner join
@@ -70,7 +53,7 @@ as
     sum(w2.wait_percent) - max(w1.wait_percent) < 95; -- percentage threshold
 
   -- cleanup
-  delete from dbo.WaitStats where collection_time < dateadd(day, -(@retention), getdate());
+  delete from dbo.WaitStats where CollectionTime < dateadd(day, -(@retention), getdate());
 go
 
 /*

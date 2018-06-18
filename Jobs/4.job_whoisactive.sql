@@ -12,60 +12,18 @@ alter procedure dbo.sp_CollectWhoIsActive
 as
   set nocount on;
 
-  declare
-    @retention int = 7
-    ,@destination_table varchar(500) = 'WhoIsActive'
-    ,@destination_database sysname = 'DBA'
-    ,@schema varchar(max)
-    ,@SQL nvarchar(4000)
-    ,@parameters nvarchar(500)
-    ,@exists bit;
+  declare @databaseName varchar(128) = 'WhoIsActive';
+  declare @retention int = 7;
 
-  set @destination_table = @destination_database + '.dbo.' + @destination_table;
-
-  -- create the logging table
-  if object_id(@destination_table) is null
-    begin;
-      exec dbo.sp_WhoIsActive
-        @get_transaction_info = 1
-        ,@get_outer_command = 1
-        ,@get_plans = 1
-        ,@return_schema = 1
-        ,@schema = @schema output;
-
-      set @schema = replace(@schema, '<table_name>', @destination_table);
-
-      exec (@schema);
-    end;
-
-  -- create clustered index
-  set @SQL = 'USE ' + quotename(@destination_database) + '; IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(@destination_table) AND name = N''cx_collection_time'') SET @exists = 0';
-  set @parameters = N'@destination_table varchar(500), @exists bit OUTPUT';
-
-  exec sys.sp_executesql
-    @SQL
-    ,@parameters
-    ,@destination_table = @destination_table
-    ,@exists = @exists output;
-
-  if @exists = 0
-    begin;
-      set @SQL = 'CREATE CLUSTERED INDEX cx_collection_time ON ' + @destination_table + '(collection_time ASC)';
-
-      exec (@SQL);
-    end;
-
-  -- collect activity
+  -- capture
   exec dbo.sp_WhoIsActive
     @get_transaction_info = 1
     ,@get_outer_command = 1
     ,@get_plans = 1
-    ,@destination_table = @destination_table;
+    ,@destination_table = databaseName;
 
   -- cleanup
-  set @SQL = 'DELETE FROM ' + @destination_table + ' WHERE collection_time < DATEADD(day, -' + cast(@retention as varchar(10)) + ', GETDATE());';
-
-  exec (@SQL);
+  delete from WhoIsActive where collection_time < dateadd(day, -(@retention), getdate());
 go
 
 /*
