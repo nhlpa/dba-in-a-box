@@ -20,7 +20,7 @@ as
     @get_transaction_info = 1
     ,@get_outer_command = 1
     ,@get_plans = 1
-    ,@destination_table = databaseName;
+    ,@destination_table = @databaseName;
 
   -- cleanup
   delete from WhoIsActive where collection_time < dateadd(day, -(@retention), getdate());
