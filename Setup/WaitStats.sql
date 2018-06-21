@@ -1,10 +1,4 @@
-/*
-Storage of wait stat captures
-*/
-use DBA;
-go
-
-if object_id('dbo.WaitStats') is not null
+if object_id('dbo.WaitStats', 'U') is not null
   drop table dbo.WaitStats;
 
 create table dbo.WaitStats

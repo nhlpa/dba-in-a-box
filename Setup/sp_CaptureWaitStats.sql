@@ -1,18 +1,12 @@
-/*
-sp_CollectWaitStats (run daily)
-*/
-use DBA;
+if object_id('dbo.sp_CaptureWaitStats') is null
+  exec('create procedure dbo.sp_CaptureWaitStats as return 0;');
 go
 
-if object_id('dbo.sp_CollectWaitStats') is null
-  exec('create procedure dbo.sp_CollectWaitStats as return 0;');
-go
-
-alter procedure dbo.sp_CollectWaitStats
+alter procedure dbo.sp_CaptureWaitStats
 as
   set nocount on;
 
-  declare @retention int = 7;
+  set xact_abort on;
 
   -- capture
   with waits as (
@@ -51,87 +45,4 @@ as
     w1.r
   having
     sum(w2.wait_percent) - max(w1.wait_percent) < 95; -- percentage threshold
-
-  -- cleanup
-  delete from dbo.WaitStats where CollectionTime < dateadd(day, -(@retention), getdate());
 go
-
-/*
-WAITSTAITS JOB
-*/
-use msdb;
-go
-
-declare @categoryName varchar(50) = '[MONITOR]';
-declare @jobId uniqueidentifier;
-declare @jobName varchar(50) = 'DBA_WAITSTATS';
-declare @jobDescription varchar(255) = 'Collect rollups from sys.dm_os_wait_stats';
-declare @scheduleName varchar(50) = '[WAITSTATS - Daily]';
-
--- category
-if not exists (
-  select
-    name
-  from
-    msdb.dbo.syscategories
-  where
-    name = @categoryName
-    and category_class = 1
-)
-  begin
-    exec msdb.dbo.sp_add_category
-      @class = N'JOB'
-      ,@type = N'LOCAL'
-      ,@name = @categoryName;
-  end;
-
--- schedule
-if not exists (select null from msdb.dbo.sysschedules where name = @scheduleName)
-  exec msdb.dbo.sp_add_schedule
-    @schedule_name = @scheduleName
-    ,@enabled = 1
-    ,@freq_type = 4
-    ,@freq_interval = 1
-    ,@freq_subday_type = 1
-    ,@freq_subday_interval = 0
-    ,@freq_relative_interval = 0
-    ,@freq_recurrence_factor = 0
-    ,@active_start_date = 19900101
-    ,@active_end_date = 99991231
-    ,@active_start_time = 235900
-    ,@active_end_time = 235959;
-
--- job
-if exists (select null from msdb.dbo.sysjobs where name = @jobName)
-  begin
-    exec msdb.dbo.sp_delete_job
-      @job_name = @jobName
-      ,@delete_unused_schedule = 0;
-  end;
-
-exec msdb.dbo.sp_add_job
-  @job_name = @jobName
-  ,@enabled = 1
-  ,@owner_login_name = 'sa'
-  ,@description = @jobDescription
-  ,@category_name = @categoryName
-  ,@notify_level_eventlog = 2
-  ,@job_id = @jobId output;
-
-exec msdb.dbo.sp_add_jobstep
-  @job_id = @jobId
-  ,@step_name = 'Run dbo.sp_CollectWaitStats'
-  ,@command = N'exec dbo.sp_CollectWaitStats'
-  ,@on_success_action = 1
-  ,@on_fail_action = 2
-  ,@database_name = N'DBA';
-
--- schedules
-exec msdb.dbo.sp_attach_schedule
-  @job_id = @jobId
-  ,@schedule_name = @scheduleName;
-
--- server
-exec msdb.dbo.sp_add_jobserver
-  @job_id = @jobId
-  ,@server_name = N'(local)';

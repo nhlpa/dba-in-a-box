@@ -1,14 +1,4 @@
-/*
-sp_whoIsActive
-
-Credit: Adam Machanic
-
-Source: http://whoisactive.com/downloads/
-*/
-use DBA;
-go
-
-set QUOTED_IDENTIFIER ON;
+SET QUOTED_IDENTIFIER ON;
 SET ANSI_PADDING ON;
 SET CONCAT_NULL_YIELDS_NULL ON;
 SET ANSI_WARNINGS ON;

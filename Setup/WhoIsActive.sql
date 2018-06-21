@@ -1,10 +1,4 @@
-/*
-Storage of sp_whoIsActive output
-*/
-use DBA;
-go
-
-if object_id('dbo.WhoIsActive') is not null
+if object_id('dbo.WhoIsActive', 'U') is not null
   drop table dbo.WhoIsActive;
 
 create table dbo.WhoIsActive
