@@ -1,4 +1,10 @@
+<a name="header1"></a>
 # DBA In A Box
+[![licence badge]][licence]
+[![stars badge]][stars]
+[![forks badge]][forks]
+[![issues badge]][issues]
+
 Useful scripts and jobs to make life as a DBA easier.
 
 ## Scripts Included
@@ -26,6 +32,22 @@ This will install the scripts list above in the `master` database. The following
 6. `DBA_WHOISACTIVE`: Capture a snapshot of `sp_whoIsActive` - 60s
 
 > All jobs are created in the *disabled* state and must be *enabled*.
+
+## License
+
+[dba-in-a-box uses the GNU GENERAL PUBLIC LICENSE.](LICENSE.md)
+
+[*Back to top*](#header1)
+
+[licence badge]:https://img.shields.io/badge/license-GNU-blue.svg
+[stars badge]:https://img.shields.io/github/stars/pimbrouwers/dba-in-a-box.svg
+[forks badge]:https://img.shields.io/github/forks/pimbrouwers/dba-in-a-box.svg
+[issues badge]:https://img.shields.io/github/issues/pimbrouwers/dba-in-a-box.svg
+
+[licence]:https://github.com/pimbrouwers/dba-in-a-box/blob/master/LICENSE.md
+[stars]:https://github.com/pimbrouwers/dba-in-a-box/stargazers
+[forks]:https://github.com/pimbrouwers/dba-in-a-box/network
+[issues]:https://github.com/pimbrouwers/dba-in-a-box/issues
 
 [1]: http://whoisactive.com/downloads/
 [2]: https://github.com/olahallengren/sql-server-maintenance-solution/blob/master/DatabaseIntegrityCheck.sql
