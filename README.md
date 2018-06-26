@@ -30,6 +30,7 @@ This will install the scripts list above in the `master` database. The following
 4. `DBA_STATISTICS`: Update statistics on all user databases - daily (midnight).
 5. `DBA_WAITSTATS`: Capture a snapshot of server wait statistics - daily (midnight).
 6. `DBA_WHOISACTIVE`: Capture a snapshot of `sp_whoIsActive` - 60s
+7. `DBA_PURGEHISTORY`: Purge `msdb` backup & job history of data older than 60 days - daily (midnight).
 
 > All jobs are created in the *disabled* state and must be *enabled*.
 
