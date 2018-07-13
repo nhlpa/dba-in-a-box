@@ -26,12 +26,12 @@ if not exists (select null from msdb.dbo.sysschedules where name = @scheduleName
   exec msdb.dbo.sp_add_schedule
     @schedule_name = @scheduleName
     ,@enabled = 1
-    ,@freq_type = 4
+    ,@freq_type = 8
     ,@freq_interval = 64
     ,@freq_subday_type = 1
     ,@freq_subday_interval = 0
     ,@freq_relative_interval = 0
-    ,@freq_recurrence_factor = 0
+    ,@freq_recurrence_factor = 1
     ,@active_start_date = 19900101
     ,@active_end_date = 99991231
     ,@active_start_time = 235900
