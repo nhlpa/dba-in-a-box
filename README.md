@@ -5,7 +5,7 @@
 [![forks badge]][forks]
 [![issues badge]][issues]
 
-Useful scripts and jobs to make life as a DBA easier.
+Useful scripts and jobs to make life as a part-time DBA easier.
 
 ## Scripts Included
 - [sp_whoIsActive][1] by Adam Machanic
