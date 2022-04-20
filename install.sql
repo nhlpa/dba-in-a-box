@@ -5405,7 +5405,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-12-31 18:58:56                                                               //--
+  --// Version: 2022-01-02 13:58:13                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5702,7 +5702,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-12-31 18:58:56                                                               //--
+  --// Version: 2022-01-02 13:58:13                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7020,7 +7020,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
-    IF @CurrentDatabaseState = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
+    IF @CurrentDatabaseState IN('ONLINE','EMERGENCY') AND SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = DB_ID(@CurrentDatabaseName) AND database_guid IS NOT NULL)
       BEGIN
@@ -7104,7 +7104,7 @@ BEGIN
 
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
-    IF @CurrentDatabaseState = 'ONLINE'
+    IF @CurrentDatabaseState IN('ONLINE','EMERGENCY')
     AND NOT (@CurrentUserAccess = 'SINGLE_USER' AND @CurrentIsDatabaseAccessible = 0)
     AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL OR SERVERPROPERTY('EngineEdition') = 3)
     AND ((@AvailabilityGroupReplicas = 'PRIMARY' AND @CurrentAvailabilityGroupRole = 'PRIMARY') OR (@AvailabilityGroupReplicas = 'SECONDARY' AND @CurrentAvailabilityGroupRole = 'SECONDARY') OR (@AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA' AND @CurrentIsPreferredBackupReplica = 1) OR @AvailabilityGroupReplicas = 'ALL' OR @CurrentAvailabilityGroupRole IS NULL)
@@ -7606,7 +7606,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-12-31 18:58:56                                                               //--
+  --// Version: 2022-01-02 13:58:13                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -10028,7 +10028,7 @@ AS
 	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 	
 
-	SELECT @Version = '8.05', @VersionDate = '20210725';
+	SELECT @Version = '8.09', @VersionDate = '20220408';
 	SET @OutputType = UPPER(@OutputType);
 
     IF(@VersionCheckMode = 1)
@@ -10072,7 +10072,7 @@ AS
 	@CheckProcedureCache		1=top 20-50 resource-intensive cache plans and analyze them for common performance issues.
 	@OutputProcedureCache		1=output the top 20-50 resource-intensive plans even if they did not trigger an alarm
 	@CheckProcedureCacheFilter	''CPU'' | ''Reads'' | ''Duration'' | ''ExecCount''
-	@OutputType					''TABLE''=table | ''COUNT''=row with number found | ''MARKDOWN''=bulleted list | ''SCHEMA''=version and field list | ''XML'' =table output as XML | ''NONE'' = none
+	@OutputType					''TABLE''=table | ''COUNT''=row with number found | ''MARKDOWN''=bulleted list (including server info, excluding security findings) | ''SCHEMA''=version and field list | ''XML'' =table output as XML | ''NONE'' = none
 	@IgnorePrioritiesBelow		50=ignore priorities below 50
 	@IgnorePrioritiesAbove		50=ignore priorities above 50
 	For the rest of the parameters, see https://www.BrentOzar.com/blitz/documentation for details.
@@ -13018,22 +13018,148 @@ AS
 
 						IF @Debug IN (1, 2) RAISERROR('Running CheckId [%d].', 0, 1, 53) WITH NOWAIT;
 
-						INSERT  INTO #BlitzResults
-								( CheckID ,
-								  Priority ,
-								  FindingsGroup ,
-								  Finding ,
-								  URL ,
-								  Details
-								)
-								SELECT TOP 1
-										53 AS CheckID ,
-										200 AS Priority ,
-										'Informational' AS FindingsGroup ,
-										'Cluster Node' AS Finding ,
-										'https://www.brentozar.com/go/node' AS URL ,
-										'This is a node in a cluster.' AS Details
-								FROM    sys.dm_os_cluster_nodes;
+						--INSERT  INTO #BlitzResults
+                                         --            ( CheckID ,
+                                         --              Priority ,
+                                         --              FindingsGroup ,
+                                         --              Finding ,
+                                         --              URL ,
+                                         --              Details
+                                         --            )
+                                         --            SELECT TOP 1
+                                         --                         53 AS CheckID ,
+                                         --                         200 AS Priority ,
+                                         --                         'Informational' AS FindingsGroup ,
+                                         --                         'Cluster Node' AS Finding ,
+                                         --                         'https://BrentOzar.com/go/node' AS URL ,
+                                         --                         'This is a node in a cluster.' AS Details
+                                         --            FROM    sys.dm_os_cluster_nodes;
+
+                                         DECLARE @AOFCI AS INT, @AOAG AS INT, @HAType AS VARCHAR(10), @errmsg AS VARCHAR(200)
+
+                                         SELECT @AOAG = CAST(SERVERPROPERTY('IsHadrEnabled') AS INT)
+                                         SELECT @AOFCI = CAST(SERVERPROPERTY('IsClustered') AS INT)
+
+                                         IF (SELECT COUNT(DISTINCT join_state_desc) FROM sys.dm_hadr_availability_replica_cluster_states) = 2 
+                                         BEGIN --if count is 2 both JOINED_STANDALONE and JOINED_FCI is configured
+                                                       SET @AOFCI = 1
+                                         END
+
+                                         SELECT @HAType =
+                                         CASE
+                                                       WHEN @AOFCI = 1 AND @AOAG =1 THEN 'FCIAG'
+                                                       WHEN @AOFCI = 1 AND @AOAG =0 THEN 'FCI'
+                                                       WHEN @AOFCI = 0 AND @AOAG =1 THEN 'AG'
+                                                       ELSE 'STANDALONE'
+                                         END
+
+                                         IF (@HAType IN ('FCIAG','FCI','AG'))
+                                         BEGIN
+
+                                                   INSERT  INTO #BlitzResults
+                                                               ( CheckID ,
+                                                                      Priority ,
+                                                                      FindingsGroup ,
+                                                                      Finding ,
+                                                                      URL ,
+                                                                      Details
+                                                               )
+
+                                                   SELECT 53 AS CheckID ,
+                                                   200 AS Priority ,
+                                                   'Informational' AS FindingsGroup ,
+                                                   'Cluster Node' AS Finding ,
+                                                   'https://BrentOzar.com/go/node' AS URL ,
+                                                   'This is a node in a cluster.' AS Details
+
+                                                   IF @HAType = 'AG'
+                                                   BEGIN
+                                                                INSERT  INTO #BlitzResults
+                                                                            ( CheckID ,
+                                                                                   Priority ,
+                                                                                  FindingsGroup ,
+                                                                                   Finding ,
+                                                                                   URL ,
+                                                                                   Details
+                                                                            )
+                                                                SELECT 53 AS CheckID ,
+                                                                200 AS Priority ,
+                                                                'Informational' AS FindingsGroup ,
+                                                                'Cluster Node Info' AS Finding ,
+                                                                'https://BrentOzar.com/go/node' AS URL,
+                                                                'The cluster nodes are: ' + STUFF((SELECT ', ' + CASE ar.replica_server_name WHEN dhags.primary_replica THEN 'PRIMARY'
+                                                                ELSE 'SECONDARY'
+                                                                END + '=' + UPPER(ar.replica_server_name) 
+                                                                FROM sys.availability_groups AS ag
+                                                                LEFT OUTER JOIN sys.availability_replicas AS ar ON ag.group_id = ar.group_id
+                                                                LEFT OUTER JOIN sys.dm_hadr_availability_group_states as dhags ON ag.group_id = dhags.group_id
+                                                                ORDER BY 1
+                                                                FOR XML PATH ('')
+                                                                ), 1, 1, '') + ' - High Availability solution used is AlwaysOn Availability Group (AG)' As Details
+                                                   END
+
+                                                   IF @HAType = 'FCI'
+                                                   BEGIN
+                                                                INSERT  INTO #BlitzResults
+                                                                            ( CheckID ,
+                                                                                   Priority ,
+                                                                                   FindingsGroup ,
+                                                                                   Finding ,
+                                                                                   URL ,
+                                                                                   Details
+                                                                            )
+                                                                SELECT 53 AS CheckID ,
+                                                                200 AS Priority ,
+                                                                'Informational' AS FindingsGroup ,
+                                                                'Cluster Node Info' AS Finding ,
+                                                                'https://BrentOzar.com/go/node' AS URL,
+                                                                'The cluster nodes are: ' + STUFF((SELECT ', ' + CASE is_current_owner 
+                                                                            WHEN 1 THEN 'PRIMARY'
+                                                                           ELSE 'SECONDARY'
+                                                                END + '=' + UPPER(NodeName) 
+                                                                FROM sys.dm_os_cluster_nodes
+                                                                ORDER BY 1
+                                                                FOR XML PATH ('')
+                                                                ), 1, 1, '') + ' - High Availability solution used is AlwaysOn Failover Cluster Instance (FCI)' As Details
+                                                   END
+
+                                                   IF @HAType = 'FCIAG'
+                                                   BEGIN
+                                                                INSERT  INTO #BlitzResults
+                                                                            ( CheckID ,
+                                                                                   Priority ,
+                                                                                   FindingsGroup ,
+                                                                                   Finding ,
+                                                                                   URL ,
+                                                                                   Details
+                                                                            )
+                                                                SELECT 53 AS CheckID ,
+                                                                200 AS Priority ,
+                                                                'Informational' AS FindingsGroup ,
+                                                                'Cluster Node Info' AS Finding ,
+                                                                'https://BrentOzar.com/go/node' AS URL,
+                                                                'The cluster nodes are: ' + STUFF((SELECT ', ' + HighAvailabilityRoleDesc + '=' + ServerName
+                                                                FROM (SELECT UPPER(ar.replica_server_name) AS ServerName
+                                                                                     ,CASE ar.replica_server_name WHEN dhags.primary_replica THEN 'PRIMARY'
+                                                                                     ELSE 'SECONDARY'
+                                                                                     END AS HighAvailabilityRoleDesc
+                                                                                     FROM sys.availability_groups AS ag
+                                                                                     LEFT OUTER JOIN sys.availability_replicas AS ar ON ag.group_id = ar.group_id
+                                                                                     LEFT OUTER JOIN sys.dm_hadr_availability_group_states as dhags ON ag.group_id = dhags.group_id
+                                                                                     WHERE UPPER(CAST(SERVERPROPERTY('ServerName') AS VARCHAR)) <> ar.replica_server_name
+                                                                                     UNION ALL
+                                                                                     SELECT UPPER(NodeName) AS ServerName
+                                                                                     ,CASE is_current_owner 
+                                                                                     WHEN 1 THEN 'PRIMARY'
+                                                                                     ELSE 'SECONDARY'
+                                                                                     END AS HighAvailabilityRoleDesc
+                                                                                     FROM sys.dm_os_cluster_nodes) AS Z
+                                                                ORDER BY 1
+                                                                FOR XML PATH ('')
+                                                                ), 1, 1, '') + ' - High Availability solution used is AlwaysOn FCI with AG (Failover Cluster Instance with Availability Group).'As Details
+                                                   END
+                                         END
+
 					END;
 
 				IF NOT EXISTS ( SELECT  1
@@ -14332,12 +14458,12 @@ AS
 								SET @StringToExecute = 'INSERT INTO #BlitzResults (CheckID, DatabaseName, Priority, FindingsGroup, Finding, URL, Details)
 								   SELECT ' + CAST(@CurrentCheckID AS NVARCHAR(200)) + ', d.[name], ' + CAST(@CurrentPriority AS NVARCHAR(200)) + ', ''Non-Default Database Config'', ''' + @CurrentFinding + ''',''' + @CurrentURL + ''',''' + COALESCE(@CurrentDetails, 'This database setting is not the default.') + '''
 									FROM sys.databases d
-									WHERE d.database_id > 4 AND d.state <> 1 AND (d.[' + @CurrentName + '] NOT IN (0, 60) OR d.[' + @CurrentName + '] IS NULL) OPTION (RECOMPILE);';
+									WHERE d.database_id > 4 AND d.state = 0 AND (d.[' + @CurrentName + '] NOT IN (0, 60) OR d.[' + @CurrentName + '] IS NULL) OPTION (RECOMPILE);';
 							ELSE
 								SET @StringToExecute = 'INSERT INTO #BlitzResults (CheckID, DatabaseName, Priority, FindingsGroup, Finding, URL, Details)
 								   SELECT ' + CAST(@CurrentCheckID AS NVARCHAR(200)) + ', d.[name], ' + CAST(@CurrentPriority AS NVARCHAR(200)) + ', ''Non-Default Database Config'', ''' + @CurrentFinding + ''',''' + @CurrentURL + ''',''' + COALESCE(@CurrentDetails, 'This database setting is not the default.') + '''
 									FROM sys.databases d
-									WHERE d.database_id > 4 AND d.state <> 1 AND (d.[' + @CurrentName + '] <> ' + @CurrentDefaultValue + ' OR d.[' + @CurrentName + '] IS NULL) OPTION (RECOMPILE);';
+									WHERE d.database_id > 4 AND d.state = 0 AND (d.[' + @CurrentName + '] <> ' + @CurrentDefaultValue + ' OR d.[' + @CurrentName + '] IS NULL) OPTION (RECOMPILE);';
 						
 							IF @Debug = 2 AND @StringToExecute IS NOT NULL PRINT @StringToExecute;
 							IF @Debug = 2 AND @StringToExecute IS NULL PRINT '@StringToExecute has gone NULL, for some reason.';
@@ -16241,7 +16367,8 @@ IF @ProductVersionMajor >= 10
 		                              FROM [?].sys.database_files WHERE type_desc = ''LOG''
 			                            AND N''?'' <> ''[tempdb]''
 		                              GROUP BY LEFT(physical_name, 1)
-		                              HAVING COUNT(*) > 1 OPTION (RECOMPILE);';
+		                              HAVING COUNT(*) > 1 
+									     AND SUM(size) < 268435456 OPTION (RECOMPILE);';
 					        END;
 
 				        IF NOT EXISTS ( SELECT  1
@@ -16324,8 +16451,8 @@ IF @ProductVersionMajor >= 10
 		                                ''File Configuration'' AS FindingsGroup,
 		                                ''File growth set to 1MB'',
 		                                ''https://www.brentozar.com/go/percentgrowth'' AS URL,
-		                                ''The ['' + DB_NAME() + ''] database file '' + f.physical_name + '' is using 1MB filegrowth settings, but it has grown to '' + CAST((f.size * 8 / 1000000) AS NVARCHAR(10)) + '' GB. Time to up the growth amount.''
-		                                FROM    [?].sys.database_files f
+										''The ['' + DB_NAME() + ''] database file '' + f.physical_name + '' is using 1MB filegrowth settings, but it has grown to '' + CAST((CAST(f.size AS BIGINT) * 8 / 1000000) AS NVARCHAR(10)) + '' GB. Time to up the growth amount.''
+										FROM    [?].sys.database_files f
                                         WHERE is_percent_growth = 0 and growth=128 and size > 128000  OPTION (RECOMPILE);';
 					            END;
 
@@ -16457,6 +16584,7 @@ IF @ProductVersionMajor >= 10
 								
 								EXEC dbo.sp_MSforeachdb 'USE [?];
 			SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+			SET QUOTED_IDENTIFIER ON;
             INSERT INTO #BlitzResults
 			(CheckID,
 			DatabaseName,
@@ -17760,6 +17888,7 @@ IF @ProductVersionMajor >= 10
 											 WHEN [T].[TraceFlag] = '1117' THEN '1117 enabled globally, which grows all files in a filegroup at the same time.'
 											 WHEN [T].[TraceFlag] = '1118' THEN '1118 enabled globally, which tries to reduce SGAM waits.'
 											 WHEN [T].[TraceFlag] = '1211' THEN '1211 enabled globally, which disables lock escalation when you least expect it. This is usually a very bad idea.'
+											 WHEN [T].[TraceFlag] = '1204' THEN '1204 enabled globally, which captures deadlock graphs in the error log.'
 											 WHEN [T].[TraceFlag] = '1222' THEN '1222 enabled globally, which captures deadlock graphs in the error log.'
 											 WHEN [T].[TraceFlag] = '1224' THEN '1224 enabled globally, which disables lock escalation until the server has memory pressure. This is usually a very bad idea.'
 											 WHEN [T].[TraceFlag] = '1806' THEN '1806 enabled globally, which disables Instant File Initialization, causing restores and file growths to take longer. This is usually a very bad idea.'
@@ -18679,7 +18808,8 @@ IF @ProductVersionMajor >= 10 AND  NOT EXISTS ( SELECT  1
 								EXEC master.sys.xp_regread @rootkey = 'HKEY_LOCAL_MACHINE',
 														   @key = 'SOFTWARE\Policies\Microsoft\Power\PowerSettings',
 														   @value_name = 'ActivePowerScheme',
-														   @value = @outval OUTPUT;
+														   @value = @outval OUTPUT,
+														   @no_output = 'no_output';
 
 								IF @outval IS NULL /* If power plan was not set by group policy, get local value [Git Hub Issue #1620]*/
 								EXEC master.sys.xp_regread @rootkey = 'HKEY_LOCAL_MACHINE',
@@ -19372,10 +19502,10 @@ IF @ProductVersionMajor >= 10 AND  NOT EXISTS ( SELECT  1
 									WHEN r.Priority <> COALESCE(rPrior.Priority, 0) OR r.FindingsGroup <> rPrior.FindingsGroup  THEN @crlf + N'**Priority ' + CAST(COALESCE(r.Priority,N'') AS NVARCHAR(5)) + N': ' + COALESCE(r.FindingsGroup,N'') + N'**:' + @crlf + @crlf
 									ELSE N''
 								END
-								+ CASE WHEN r.Finding <> COALESCE(rPrior.Finding,N'') AND r.Finding <> rNext.Finding THEN N'- ' + COALESCE(r.Finding,N'') + N' ' + COALESCE(r.DatabaseName, N'') + N' - ' + COALESCE(r.Details,N'') + @crlf
+								+ CASE WHEN r.Finding <> COALESCE(rPrior.Finding,N'') AND r.Finding <> COALESCE(rNext.Finding,N'') THEN N'- ' + COALESCE(r.Finding,N'') + N' ' + COALESCE(r.DatabaseName, N'') + N' - ' + COALESCE(r.Details,N'') + @crlf
 									   WHEN r.Finding <> COALESCE(rPrior.Finding,N'') AND r.Finding = rNext.Finding AND r.Details = rNext.Details THEN N'- ' + COALESCE(r.Finding,N'') + N' - ' + COALESCE(r.Details,N'') + @crlf + @crlf + N'    * ' + COALESCE(r.DatabaseName, N'') + @crlf
-									   WHEN r.Finding <> COALESCE(rPrior.Finding,N'') AND r.Finding = rNext.Finding THEN N'- ' + COALESCE(r.Finding,N'') + @crlf + CASE WHEN r.DatabaseName IS NULL THEN N'' ELSE  N'    * ' + COALESCE(r.DatabaseName,N'') END + CASE WHEN r.Details <> rPrior.Details THEN N' - ' + COALESCE(r.Details,N'') + @crlf ELSE '' END
-									   ELSE CASE WHEN r.DatabaseName IS NULL THEN N'' ELSE  N'    * ' + COALESCE(r.DatabaseName,N'') END + CASE WHEN r.Details <> rPrior.Details THEN N' - ' + COALESCE(r.Details,N'') + @crlf ELSE N'' + @crlf END
+									   WHEN r.Finding <> COALESCE(rPrior.Finding,N'') AND r.Finding = rNext.Finding THEN N'- ' + COALESCE(r.Finding,N'') + @crlf + CASE WHEN r.DatabaseName IS NULL THEN N'' ELSE  N'    * ' + COALESCE(r.DatabaseName,N'') END + CASE WHEN r.Details <> rPrior.Details THEN N'  - ' + COALESCE(r.Details,N'') + @crlf ELSE '' END
+									   ELSE CASE WHEN r.DatabaseName IS NULL THEN N'' ELSE  N'    * ' + COALESCE(r.DatabaseName,N'') END + CASE WHEN r.Details <> rPrior.Details THEN N'  - ' + COALESCE(r.Details,N'') + @crlf ELSE N'' + @crlf END
 								END + @crlf
 							  FROM Results r
 							  LEFT OUTER JOIN Results rPrior ON r.rownum = rPrior.rownum + 1
@@ -19788,7 +19918,7 @@ SET NOCOUNT ON;
 SET STATISTICS XML OFF;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-SELECT @Version = '8.05', @VersionDate = '20210725';
+SELECT @Version = '8.09', @VersionDate = '20220408';
 SET @OutputType = UPPER(@OutputType);
 
 IF(@VersionCheckMode = 1)
@@ -26223,15 +26353,17 @@ SET @AllSortSql += N'
 						END; 
 
 				    END;
-					SET @AllSortSql += N' SELECT DatabaseName, Cost, QueryText, QueryType, Warnings, QueryPlan, missing_indexes, implicit_conversion_info, cached_execution_parameters,ExecutionCount, ExecutionsPerMinute, ExecutionWeight, 
-										  TotalCPU, AverageCPU, CPUWeight, TotalDuration, AverageDuration, DurationWeight, TotalReads, AverageReads, 
-										  ReadWeight, TotalWrites, AverageWrites, WriteWeight, AverageReturnedRows, MinGrantKB, MaxGrantKB, MinUsedGrantKB, 
-										  MaxUsedGrantKB, AvgMaxMemoryGrant, MinSpills, MaxSpills, TotalSpills, AvgSpills, PlanCreationTime, LastExecutionTime, LastCompletionTime, PlanHandle, SqlHandle, SetOptions, QueryHash, PlanGenerationNum, RemovePlanHandleFromCache, Pattern 
-										  FROM #bou_allsort 
-										  ORDER BY Id 
-										  OPTION(RECOMPILE);  ';
 
-				
+					IF(@OutputType <> 'NONE')
+					BEGIN
+						SET @AllSortSql += N' SELECT DatabaseName, Cost, QueryText, QueryType, Warnings, QueryPlan, missing_indexes, implicit_conversion_info, cached_execution_parameters,ExecutionCount, ExecutionsPerMinute, ExecutionWeight, 
+											  TotalCPU, AverageCPU, CPUWeight, TotalDuration, AverageDuration, DurationWeight, TotalReads, AverageReads, 
+											  ReadWeight, TotalWrites, AverageWrites, WriteWeight, AverageReturnedRows, MinGrantKB, MaxGrantKB, MinUsedGrantKB, 
+											  MaxUsedGrantKB, AvgMaxMemoryGrant, MinSpills, MaxSpills, TotalSpills, AvgSpills, PlanCreationTime, LastExecutionTime, LastCompletionTime, PlanHandle, SqlHandle, SetOptions, QueryHash, PlanGenerationNum, RemovePlanHandleFromCache, Pattern 
+											  FROM #bou_allsort 
+											  ORDER BY Id 
+											  OPTION(RECOMPILE);  ';
+					END;
 END; 			
 
 
@@ -26399,13 +26531,16 @@ SET @AllSortSql += N'
 
 				    END;
 
-					SET @AllSortSql += N' SELECT DatabaseName, Cost, QueryText, QueryType, Warnings, QueryPlan, missing_indexes, implicit_conversion_info, cached_execution_parameters,ExecutionCount, ExecutionsPerMinute, ExecutionWeight, 
-										  TotalCPU, AverageCPU, CPUWeight, TotalDuration, AverageDuration, DurationWeight, TotalReads, AverageReads, 
-										  ReadWeight, TotalWrites, AverageWrites, WriteWeight, AverageReturnedRows, MinGrantKB, MaxGrantKB, MinUsedGrantKB, 
-										  MaxUsedGrantKB, AvgMaxMemoryGrant, MinSpills, MaxSpills, TotalSpills, AvgSpills, PlanCreationTime, LastExecutionTime, LastCompletionTime, PlanHandle, SqlHandle, SetOptions, QueryHash, PlanGenerationNum, RemovePlanHandleFromCache, Pattern
-										  FROM #bou_allsort 
-										  ORDER BY Id 
-										  OPTION(RECOMPILE);  ';
+					IF(@OutputType <> 'NONE')
+					BEGIN
+						SET @AllSortSql += N' SELECT DatabaseName, Cost, QueryText, QueryType, Warnings, QueryPlan, missing_indexes, implicit_conversion_info, cached_execution_parameters,ExecutionCount, ExecutionsPerMinute, ExecutionWeight, 
+											  TotalCPU, AverageCPU, CPUWeight, TotalDuration, AverageDuration, DurationWeight, TotalReads, AverageReads, 
+											  ReadWeight, TotalWrites, AverageWrites, WriteWeight, AverageReturnedRows, MinGrantKB, MaxGrantKB, MinUsedGrantKB, 
+											  MaxUsedGrantKB, AvgMaxMemoryGrant, MinSpills, MaxSpills, TotalSpills, AvgSpills, PlanCreationTime, LastExecutionTime, LastCompletionTime, PlanHandle, SqlHandle, SetOptions, QueryHash, PlanGenerationNum, RemovePlanHandleFromCache, Pattern
+											  FROM #bou_allsort 
+											  ORDER BY Id 
+											  OPTION(RECOMPILE);  ';
+					END;
 END;
 
 					IF @Debug = 1
@@ -26421,12 +26556,10 @@ END;
 						    PRINT SUBSTRING(@AllSortSql, 32000, 36000);
 						    PRINT SUBSTRING(@AllSortSql, 36000, 40000);
 						END;
-IF(@OutputType <> 'NONE')
-BEGIN
+
 					EXEC sys.sp_executesql @stmt = @AllSortSql, @params = N'@i_DatabaseName NVARCHAR(128), @i_Top INT, @i_SkipAnalysis BIT, @i_OutputDatabaseName NVARCHAR(258), @i_OutputSchemaName NVARCHAR(258), @i_OutputTableName NVARCHAR(258), @i_CheckDateOverride DATETIMEOFFSET, @i_MinutesBack INT ', 
                         @i_DatabaseName = @DatabaseName, @i_Top = @Top, @i_SkipAnalysis = @SkipAnalysis, @i_OutputDatabaseName = @OutputDatabaseName, @i_OutputSchemaName = @OutputSchemaName, @i_OutputTableName = @OutputTableName, @i_CheckDateOverride = @CheckDateOverride, @i_MinutesBack = @MinutesBack;
 
-END;
 /*End of AllSort section*/
 
 
@@ -27049,7 +27182,7 @@ SET NOCOUNT ON;
 SET STATISTICS XML OFF;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-SELECT @Version = '8.05', @VersionDate = '20210725';
+SELECT @Version = '8.09', @VersionDate = '20220408';
 SET @OutputType  = UPPER(@OutputType);
 
 IF(@VersionCheckMode = 1)
@@ -27128,7 +27261,9 @@ DECLARE @LineFeed NVARCHAR(5);
 DECLARE @DaysUptimeInsertValue NVARCHAR(256);
 DECLARE @DatabaseToIgnore NVARCHAR(MAX);
 DECLARE @ColumnList NVARCHAR(MAX);
+DECLARE @ColumnListWithApostrophes NVARCHAR(MAX);
 DECLARE @PartitionCount INT;
+DECLARE @OptimizeForSequentialKey BIT = 0;
 
 /* Let's get @SortOrder set to lower case here for comparisons later */
 SET @SortOrder = REPLACE(LOWER(@SortOrder), N' ', N'_');
@@ -27140,6 +27275,20 @@ SELECT @SQLServerEdition =CAST(SERVERPROPERTY('EngineEdition') AS INT); /* We de
 SET @FilterMB=250;
 SELECT @ScriptVersionName = 'sp_BlitzIndex(TM) v' + @Version + ' - ' + DATENAME(MM, @VersionDate) + ' ' + RIGHT('0'+DATENAME(DD, @VersionDate),2) + ', ' + DATENAME(YY, @VersionDate);
 SET @IgnoreDatabases = REPLACE(REPLACE(LTRIM(RTRIM(@IgnoreDatabases)), CHAR(10), ''), CHAR(13), '');
+
+SELECT
+    @OptimizeForSequentialKey =
+	    CASE WHEN EXISTS
+		          (
+                      SELECT
+                          1/0
+                      FROM sys.all_columns AS ac
+                      WHERE ac.object_id = OBJECT_ID('sys.indexes')
+                      AND   ac.name = N'optimize_for_sequential_key'
+				  )
+			THEN 1
+			ELSE 0
+		END;
 
 RAISERROR(N'Starting run. %s', 0,1, @ScriptVersionName) WITH NOWAIT;
 																					
@@ -27187,6 +27336,9 @@ IF OBJECT_ID('tempdb..#MissingIndexes') IS NOT NULL
 
 IF OBJECT_ID('tempdb..#ForeignKeys') IS NOT NULL 
     DROP TABLE #ForeignKeys;
+
+IF OBJECT_ID('tempdb..#UnindexedForeignKeys') IS NOT NULL 
+    DROP TABLE #UnindexedForeignKeys;
 
 IF OBJECT_ID('tempdb..#BlitzIndexResults') IS NOT NULL 
     DROP TABLE #BlitzIndexResults;
@@ -27261,10 +27413,12 @@ IF OBJECT_ID('tempdb..#Ignore_Databases') IS NOT NULL
               count_included_columns INT NULL ,
               partition_key_column_name NVARCHAR(MAX) NULL,
               filter_definition NVARCHAR(MAX) NOT NULL ,
-              is_indexed_view BIT NOT NULL ,
+			  optimize_for_sequential_key BIT NULL,
+			  is_indexed_view BIT NOT NULL ,
               is_unique BIT NOT NULL ,
               is_primary_key BIT NOT NULL ,
-              is_XML BIT NOT NULL,
+			  is_unique_constraint BIT NOT NULL ,
+			  is_XML bit NOT NULL,
               is_spatial BIT NOT NULL,
               is_NC_columnstore BIT NOT NULL,
               is_CX_columnstore BIT NOT NULL,
@@ -27312,7 +27466,8 @@ IF OBJECT_ID('tempdb..#Ignore_Databases') IS NOT NULL
                     ELSE N'' END + CASE WHEN is_in_memory_oltp = 1 THEN N'[IN-MEMORY] '
                     ELSE N'' END + CASE WHEN is_disabled = 1 THEN N'[DISABLED] '
                     ELSE N'' END + CASE WHEN is_hypothetical = 1 THEN N'[HYPOTHETICAL] '
-                    ELSE N'' END + CASE WHEN is_unique = 1 AND is_primary_key = 0 THEN N'[UNIQUE] '
+                    ELSE N'' END + CASE WHEN is_unique = 1 AND is_primary_key = 0 AND is_unique_constraint = 0 THEN N'[UNIQUE] '
+					ELSE N'' END + CASE WHEN is_unique_constraint = 1 AND is_primary_key = 0 THEN N'[UNIQUE CONSTRAINT] '
                     ELSE N'' END + CASE WHEN count_key_columns > 0 THEN 
                         N'[' + CAST(count_key_columns AS NVARCHAR(10)) + N' KEY' 
                             + CASE WHEN count_key_columns > 1 THEN  N'S' ELSE N'' END
@@ -27631,6 +27786,18 @@ IF OBJECT_ID('tempdb..#Ignore_Databases') IS NOT NULL
             referenced_fk_columns NVARCHAR(MAX),
             update_referential_action_desc NVARCHAR(16),
             delete_referential_action_desc NVARCHAR(60)
+        );
+
+        CREATE TABLE #UnindexedForeignKeys 
+        (
+        	[database_id] INT NOT NULL,
+            [database_name] NVARCHAR(128) NOT NULL ,
+        	[schema_name] NVARCHAR(128) NOT NULL ,
+            foreign_key_name NVARCHAR(256),
+            parent_object_name NVARCHAR(256),
+			parent_object_id INT,
+			referenced_object_name NVARCHAR(256),
+			referenced_object_id INT
         );
         
         CREATE TABLE #IndexCreateTsql (
@@ -28276,7 +28443,8 @@ BEGIN TRY
                         CASE    WHEN so.[type] = CAST(''V'' AS CHAR(2)) THEN 1 ELSE 0 END, 
                         si.is_unique, 
                         si.is_primary_key, 
-                        CASE when si.type = 3 THEN 1 ELSE 0 END AS is_XML,
+						si.is_unique_constraint,
+						CASE when si.type = 3 THEN 1 ELSE 0 END AS is_XML,
                         CASE when si.type = 4 THEN 1 ELSE 0 END AS is_spatial,
                         CASE when si.type = 6 THEN 1 ELSE 0 END AS is_NC_columnstore,
                         CASE when si.type = 5 then 1 else 0 end as is_CX_columnstore,
@@ -28288,8 +28456,14 @@ BEGIN TRY
                         + CASE WHEN @SQLServerProductVersion NOT LIKE '9%' THEN N'
                         CASE WHEN si.filter_definition IS NOT NULL THEN si.filter_definition
                              ELSE N''''
-                        END AS filter_definition' ELSE N''''' AS filter_definition' END + N'
-                        , ISNULL(us.user_seeks, 0),
+                        END AS filter_definition' ELSE N''''' AS filter_definition' END 
+						+ CASE
+						      WHEN @OptimizeForSequentialKey = 1
+						      THEN N', si.optimize_for_sequential_key'
+							  ELSE N', CONVERT(BIT, NULL) AS optimize_for_sequential_key'
+						  END
+						+ N',
+						ISNULL(us.user_seeks, 0),
                         ISNULL(us.user_scans, 0),
                         ISNULL(us.user_lookups, 0),
                         ISNULL(us.user_updates, 0),
@@ -28336,8 +28510,8 @@ BEGIN TRY
                 PRINT SUBSTRING(@dsql, 36000, 40000);
             END;
         INSERT    #IndexSanity ( [database_id], [object_id], [index_id], [index_type], [database_name], [schema_name], [object_name],
-                                index_name, is_indexed_view, is_unique, is_primary_key, is_XML, is_spatial, is_NC_columnstore, is_CX_columnstore, is_in_memory_oltp,
-                                is_disabled, is_hypothetical, is_padded, fill_factor, filter_definition, user_seeks, user_scans, 
+                                index_name, is_indexed_view, is_unique, is_primary_key, is_unique_constraint, is_XML, is_spatial, is_NC_columnstore, is_CX_columnstore, is_in_memory_oltp,
+                                is_disabled, is_hypothetical, is_padded, fill_factor, filter_definition,  [optimize_for_sequential_key], user_seeks, user_scans, 
                                 user_lookups, user_updates, last_user_seek, last_user_scan, last_user_lookup, last_user_update,
                                 create_date, modify_date )
                 EXEC sp_executesql @dsql, @params = N'@i_DatabaseName NVARCHAR(128)', @i_DatabaseName = @DatabaseName;
@@ -28791,6 +28965,77 @@ BEGIN TRY
                                 is_disabled, is_not_trusted, is_not_for_replication, parent_fk_columns, referenced_fk_columns,
                                 [update_referential_action_desc], [delete_referential_action_desc] )
                 EXEC sp_executesql @dsql, @params = N'@i_DatabaseName NVARCHAR(128)', @i_DatabaseName = @DatabaseName;
+
+
+        SET @dsql = N'
+                SELECT 
+                    DB_ID(N' + QUOTENAME(@DatabaseName,'''') + N') AS [database_id], 
+			        @i_DatabaseName AS database_name,
+                    foreign_key_schema = 
+                        s.name,
+                    foreign_key_name = 
+                        fk.name,
+                    foreign_key_table = 
+                        OBJECT_NAME(fk.parent_object_id, DB_ID(N' + QUOTENAME(@DatabaseName,'''') + N')),
+					fk.parent_object_id,
+					foreign_key_referenced_table = 
+                        OBJECT_NAME(fk.referenced_object_id, DB_ID(N' + QUOTENAME(@DatabaseName,'''') + N')),
+					fk.referenced_object_id
+                FROM ' + QUOTENAME(@DatabaseName) + N'.sys.foreign_keys fk
+                JOIN ' + QUOTENAME(@DatabaseName) + N'.sys.schemas AS s
+                    ON s.schema_id = fk.schema_id
+                WHERE fk.is_disabled = 0
+                AND   EXISTS
+                      (
+                          SELECT  
+                              1/0
+                          FROM ' + QUOTENAME(@DatabaseName) + N'.sys.foreign_key_columns fkc
+                          WHERE fkc.constraint_object_id = fk.object_id
+                          AND NOT EXISTS
+                              (
+                                  SELECT  
+                                      1/0
+                                  FROM  ' + QUOTENAME(@DatabaseName) + N'.sys.index_columns ic
+                                  WHERE ic.object_id = fkc.parent_object_id
+                                  AND   ic.column_id = fkc.parent_column_id
+                                  AND   ic.index_column_id = fkc.constraint_column_id
+                              )
+                      )
+				OPTION (RECOMPILE);'
+        IF @dsql IS NULL 
+            RAISERROR('@dsql is null',16,1);
+
+        RAISERROR (N'Inserting data into #ForeignKeys',0,1) WITH NOWAIT;
+        IF @Debug = 1
+            BEGIN
+                PRINT SUBSTRING(@dsql, 0, 4000);
+                PRINT SUBSTRING(@dsql, 4000, 8000);
+                PRINT SUBSTRING(@dsql, 8000, 12000);
+                PRINT SUBSTRING(@dsql, 12000, 16000);
+                PRINT SUBSTRING(@dsql, 16000, 20000);
+                PRINT SUBSTRING(@dsql, 20000, 24000);
+                PRINT SUBSTRING(@dsql, 24000, 28000);
+                PRINT SUBSTRING(@dsql, 28000, 32000);
+                PRINT SUBSTRING(@dsql, 32000, 36000);
+                PRINT SUBSTRING(@dsql, 36000, 40000);
+            END;
+
+        INSERT
+		    #UnindexedForeignKeys
+        (
+            database_id,
+            database_name,
+            schema_name,
+            foreign_key_name,
+            parent_object_name,
+			parent_object_id,
+			referenced_object_name,
+			referenced_object_id
+        )
+        EXEC sys.sp_executesql
+            @dsql,
+            N'@i_DatabaseName sysname',
+            @DatabaseName;
 
 
 		IF @SkipStatistics = 0 /* AND DB_NAME() = @DatabaseName /* Can only get stats in the current database - see https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/issues/1947 */ */
@@ -29405,7 +29650,16 @@ SELECT
                     N'] PRIMARY KEY ' + 
                     CASE WHEN index_id=1 THEN N'CLUSTERED (' ELSE N'(' END +
                     key_column_names_with_sort_order_no_types + N' )' 
-                WHEN is_CX_columnstore= 1 THEN
+				WHEN is_unique_constraint = 1 AND is_primary_key = 0
+				THEN
+			   N'ALTER TABLE ' + QUOTENAME([database_name]) + N'.' + QUOTENAME([schema_name]) +
+                    N'.' + QUOTENAME([object_name]) + 
+                    N' ADD CONSTRAINT [' +
+                    index_name + 
+                    N'] UNIQUE ' + 
+                    CASE WHEN index_id=1 THEN N'CLUSTERED (' ELSE N'(' END +
+                    key_column_names_with_sort_order_no_types + N' )' 
+				WHEN is_CX_columnstore= 1 THEN
                         N'CREATE CLUSTERED COLUMNSTORE INDEX ' + QUOTENAME(index_name) + N' on ' + QUOTENAME([database_name]) + N'.' + QUOTENAME([schema_name]) + N'.' + QUOTENAME([object_name])
             ELSE /*Else not a PK or cx columnstore */ 
                 N'CREATE ' + 
@@ -29513,12 +29767,14 @@ FROM    #IndexSanity si
 
 IF @Debug = 1
 BEGIN
+    SELECT '#BlitzIndexResults' AS table_name, * FROM  #BlitzIndexResults AS bir;
     SELECT '#IndexSanity' AS table_name, * FROM  #IndexSanity;
     SELECT '#IndexPartitionSanity' AS table_name, * FROM  #IndexPartitionSanity;
     SELECT '#IndexSanitySize' AS table_name, * FROM  #IndexSanitySize;
     SELECT '#IndexColumns' AS table_name, * FROM  #IndexColumns;
     SELECT '#MissingIndexes' AS table_name, * FROM  #MissingIndexes;
     SELECT '#ForeignKeys' AS table_name, * FROM  #ForeignKeys;
+	SELECT '#UnindexedForeignKeys' AS table_name, * FROM  #UnindexedForeignKeys;
     SELECT '#BlitzIndexResults' AS table_name, * FROM  #BlitzIndexResults;
     SELECT '#IndexCreateTsql' AS table_name, * FROM  #IndexCreateTsql;
     SELECT '#DatabaseList' AS table_name, * FROM  #DatabaseList;
@@ -29579,6 +29835,9 @@ BEGIN
             ct.create_tsql,
             CASE 
                 WHEN s.is_primary_key = 1 AND s.index_definition <> '[HEAP]'
+                THEN N'--ALTER TABLE ' + QUOTENAME(s.[database_name]) + N'.' + QUOTENAME(s.[schema_name]) + N'.' + QUOTENAME(s.[object_name])
+                        + N' DROP CONSTRAINT ' + QUOTENAME(s.index_name) + N';'
+                WHEN s.is_primary_key = 0 AND is_unique_constraint = 1 AND s.index_definition <> '[HEAP]'
                 THEN N'--ALTER TABLE ' + QUOTENAME(s.[database_name]) + N'.' + QUOTENAME(s.[schema_name]) + N'.' + QUOTENAME(s.[object_name])
                         + N' DROP CONSTRAINT ' + QUOTENAME(s.index_name) + N';'
                 WHEN s.is_primary_key = 0 AND s.index_definition <> '[HEAP]'
@@ -29752,9 +30011,9 @@ BEGIN
 		SET @dsql = N'USE ' + QUOTENAME(@DatabaseName) + N'; 
 			IF EXISTS(SELECT * FROM ' + QUOTENAME(@DatabaseName) + N'.sys.column_store_row_groups WHERE object_id = @ObjectID)
 				BEGIN
-				SET @ColumnList = N'''';
+				SELECT @ColumnList = N'''', @ColumnListWithApostrophes = N'''';
 				WITH DistinctColumns AS (
-				SELECT DISTINCT QUOTENAME(c.name) AS column_name, c.column_id
+				SELECT DISTINCT QUOTENAME(c.name) AS column_name, QUOTENAME(c.name,'''''''') AS ColumnNameWithApostrophes, c.column_id
 					FROM ' + QUOTENAME(@DatabaseName) + N'.sys.partitions p
 					INNER JOIN ' + QUOTENAME(@DatabaseName) + N'.sys.columns c ON p.object_id = c.object_id
                     INNER JOIN ' + QUOTENAME(@DatabaseName) + N'.sys.index_columns ic on ic.column_id = c.column_id and ic.object_id = c.object_id AND ic.index_id = p.index_id
@@ -29763,9 +30022,10 @@ BEGIN
 					AND EXISTS (SELECT * FROM ' + QUOTENAME(@DatabaseName) + N'.sys.column_store_segments seg WHERE p.partition_id = seg.partition_id AND seg.column_id = ic.index_column_id)
 					AND p.data_compression IN (3,4)
 				)
-				SELECT @ColumnList = @ColumnList + column_name + N'', ''
-					FROM DistinctColumns
-					ORDER BY column_id;
+				SELECT @ColumnList = @ColumnList + column_name + N'', '',
+					@ColumnListWithApostrophes = @ColumnListWithApostrophes + ColumnNameWithApostrophes + N'', ''
+				FROM DistinctColumns
+				ORDER BY column_id;
 				SELECT @PartitionCount = COUNT(1) FROM ' + QUOTENAME(@DatabaseName) + N'.sys.partitions WHERE object_id = @ObjectID AND data_compression IN (3,4);
 				END';
 
@@ -29783,18 +30043,19 @@ BEGIN
 				PRINT SUBSTRING(@dsql, 36000, 40000);
 			END;
 
-        EXEC sp_executesql @dsql, N'@ObjectID INT, @ColumnList NVARCHAR(MAX) OUTPUT, @PartitionCount INT OUTPUT', @ObjectID, @ColumnList OUTPUT, @PartitionCount OUTPUT;
+        EXEC sp_executesql @dsql, N'@ObjectID INT, @ColumnList NVARCHAR(MAX) OUTPUT, @ColumnListWithApostrophes NVARCHAR(MAX) OUTPUT, @PartitionCount INT OUTPUT', @ObjectID, @ColumnList OUTPUT, @ColumnListWithApostrophes OUTPUT, @PartitionCount OUTPUT;
 
 		IF @PartitionCount < 2
 			SET @ShowPartitionRanges = 0;
 
 		IF @Debug = 1
-			SELECT @ColumnList AS ColumnstoreColumnList, @PartitionCount AS PartitionCount, @ShowPartitionRanges AS ShowPartitionRanges;
+			SELECT @ColumnList AS ColumnstoreColumnList, @ColumnListWithApostrophes AS ColumnstoreColumnListWithApostrophes, @PartitionCount AS PartitionCount, @ShowPartitionRanges AS ShowPartitionRanges;
 
 		IF @ColumnList <> ''
 		BEGIN
 			/* Remove the trailing comma */
 			SET @ColumnList = LEFT(@ColumnList, LEN(@ColumnList) - 1);
+			SET @ColumnListWithApostrophes = LEFT(@ColumnListWithApostrophes, LEN(@ColumnListWithApostrophes) - 1);
 
 			SET @dsql = N'USE ' + QUOTENAME(@DatabaseName) + N'; 
 				SELECT partition_number, '
@@ -29836,7 +30097,8 @@ BEGIN
 						LEFT OUTER JOIN ' + QUOTENAME(@DatabaseName) + N'.sys.partition_range_values prvs ON prvs.function_id = pf.function_id AND prvs.boundary_id = p.partition_number - 1
 						LEFT OUTER JOIN ' + QUOTENAME(@DatabaseName) + N'.sys.partition_range_values prve ON prve.function_id = pf.function_id AND prve.boundary_id = p.partition_number ' ELSE N' ' END 
 						+ N' LEFT OUTER JOIN ' + QUOTENAME(@DatabaseName) + N'.sys.column_store_segments seg ON p.partition_id = seg.partition_id AND ic.index_column_id = seg.column_id AND rg.row_group_id = seg.segment_id
-						WHERE rg.object_id = @ObjectID' 
+						WHERE rg.object_id = @ObjectID
+						AND c.name IN ( ' + @ColumnListWithApostrophes + N')' 
 						+ CASE WHEN @ShowPartitionRanges = 1 THEN N'
 					) AS y ' ELSE N' ' END + N'
 				) AS x
@@ -31135,7 +31397,6 @@ BEGIN;
 					OPTION    ( RECOMPILE );
 
         RAISERROR(N'check_id 33: Potential filtered indexes based on column names.', 0,1) WITH NOWAIT;
-
                 INSERT    #BlitzIndexResults ( check_id, index_sanity_id, Priority, findings_group, finding, [database_name], URL, details, index_definition,
                                                secret_columns, index_usage_summary, index_size_summary )
 					SELECT  33 AS check_id, 
@@ -31511,15 +31772,14 @@ BEGIN;
                     N'Cascading Updates or Deletes' AS finding, 
                     [database_name] AS [Database Name],
                     N'https://www.brentozar.com/go/AbnormalPsychology' AS URL,
-                    N'Foreign Key ' + foreign_key_name +
+                    N'Foreign Key ' + QUOTENAME(foreign_key_name) +
                     N' on ' + QUOTENAME(parent_object_name)  + N'(' + LTRIM(parent_fk_columns) + N')'
                         + N' referencing ' + QUOTENAME(referenced_object_name) + N'(' + LTRIM(referenced_fk_columns) + N')'
                         + N' has settings:'
                         + CASE [delete_referential_action_desc] WHEN N'NO_ACTION' THEN N'' ELSE N' ON DELETE ' +[delete_referential_action_desc] END
                         + CASE [update_referential_action_desc] WHEN N'NO_ACTION' THEN N'' ELSE N' ON UPDATE ' + [update_referential_action_desc] END
                             AS details, 
-                    [fk].[database_name] 
-                            AS index_definition, 
+                    [fk].[database_name] AS index_definition, 
                     N'N/A' AS secret_columns,
                     N'N/A' AS index_usage_summary,
                     N'N/A' AS index_size_summary,
@@ -31528,6 +31788,29 @@ BEGIN;
             FROM #ForeignKeys fk
             WHERE ([delete_referential_action_desc] <> N'NO_ACTION'
             OR [update_referential_action_desc] <> N'NO_ACTION')
+			OPTION    ( RECOMPILE );
+
+            RAISERROR(N'check_id 72: Unindexed foreign keys.', 0,1) WITH NOWAIT;
+                INSERT    #BlitzIndexResults ( check_id, index_sanity_id, Priority, findings_group, finding, [database_name], URL, details, index_definition,
+                                               secret_columns, index_usage_summary, index_size_summary, more_info )
+            SELECT  72 AS check_id, 
+                    NULL AS index_sanity_id,
+                    150 AS Priority,
+                    N'Abnormal Psychology' AS findings_group,
+                    N'Unindexed Foreign Keys' AS finding, 
+                    [database_name] AS [Database Name],
+                    N'https://www.brentozar.com/go/AbnormalPsychology' AS URL,
+                    N'Foreign Key ' + QUOTENAME(foreign_key_name) +
+                    N' on ' + QUOTENAME(parent_object_name)  + N''
+                        + N' referencing ' + QUOTENAME(referenced_object_name) + N''
+                        + N' does not appear to have a supporting index.' AS details, 
+                    N'N/A' AS index_definition, 
+                    N'N/A' AS secret_columns,
+                    N'N/A' AS index_usage_summary,
+                    N'N/A' AS index_size_summary,
+                    (SELECT TOP 1 more_info FROM #IndexSanity i WHERE i.object_id=fk.parent_object_id AND i.database_id = fk.database_id AND i.schema_name = fk.schema_name)
+                        AS more_info
+            FROM #UnindexedForeignKeys AS fk
 			OPTION    ( RECOMPILE );
 
 
@@ -31719,6 +32002,24 @@ BEGIN;
 		FROM #TemporalTables AS t
 		OPTION    ( RECOMPILE );
 
+		RAISERROR(N'check_id 121: Optimized For Sequental Keys.', 0,1) WITH NOWAIT;
+        INSERT    #BlitzIndexResults ( check_id, Priority, findings_group, finding, [database_name], URL, details, index_definition,
+                                               secret_columns, index_usage_summary, index_size_summary )
+
+				SELECT  121 AS check_id, 
+				200 AS Priority,
+				'Medicated Indexes' AS findings_group,
+				'Optimized For Sequential Keys',
+				i.database_name,
+				'' AS URL,
+				'The table ' + QUOTENAME(i.schema_name) + '.' + QUOTENAME(i.object_name) + ' is optimized for sequential keys.' AS details,
+				'' AS index_definition,
+				'N/A' AS secret_columns,
+				'N/A' AS index_usage_summary,
+				'N/A' AS index_size_summary
+		FROM #IndexSanity AS i
+		WHERE i.optimize_for_sequential_key = 1
+		OPTION    ( RECOMPILE );
 
 
 
@@ -32040,7 +32341,12 @@ ELSE IF (@Mode=1) /*Summarize*/
 					IF EXISTS(SELECT * FROM @@@OutputServerName@@@.@@@OutputDatabaseName@@@.INFORMATION_SCHEMA.SCHEMATA WHERE QUOTENAME(SCHEMA_NAME) = ''@@@OutputSchemaName@@@'') 
 						SET @SchemaExists = 1
 					IF EXISTS (SELECT * FROM @@@OutputServerName@@@.@@@OutputDatabaseName@@@.INFORMATION_SCHEMA.TABLES WHERE QUOTENAME(TABLE_SCHEMA) = ''@@@OutputSchemaName@@@'' AND QUOTENAME(TABLE_NAME) = ''@@@OutputTableName@@@'')
-						SET @TableExists = 1';
+					BEGIN
+						SET @TableExists = 1
+						IF NOT EXISTS(SELECT * FROM @@@OutputServerName@@@.@@@OutputDatabaseName@@@.INFORMATION_SCHEMA.COLUMNS WHERE QUOTENAME(TABLE_SCHEMA) = ''@@@OutputSchemaName@@@''
+										AND QUOTENAME(TABLE_NAME) = ''@@@OutputTableName@@@'' AND QUOTENAME(COLUMN_NAME) = ''[total_forwarded_fetch_count]'')
+							EXEC @@@OutputServerName@@@.@@@OutputDatabaseName@@@.dbo.sp_executesql N''ALTER TABLE @@@OutputSchemaName@@@.@@@OutputTableName@@@ ADD [total_forwarded_fetch_count] BIGINT''
+					END';
 	
 				SET @StringToExecute = REPLACE(@StringToExecute, '@@@OutputServerName@@@', @OutputServerName);
 				SET @StringToExecute = REPLACE(@StringToExecute, '@@@OutputDatabaseName@@@', @OutputDatabaseName);
@@ -32079,7 +32385,8 @@ ELSE IF (@Mode=1) /*Summarize*/
 											[partition_key_column_name] NVARCHAR(MAX), 
 											[filter_definition] NVARCHAR(MAX), 
 											[is_indexed_view] BIT, 
-											[is_primary_key] BIT, 
+											[is_primary_key] BIT,
+											[is_unique_constraint] BIT,
 											[is_XML] BIT, 
 											[is_spatial] BIT, 
 											[is_NC_columnstore] BIT, 
@@ -32119,6 +32426,7 @@ ELSE IF (@Mode=1) /*Summarize*/
 											[avg_page_lock_wait_in_ms] BIGINT, 
 											[total_index_lock_promotion_attempt_count] BIGINT, 
 											[total_index_lock_promotion_count] BIGINT, 
+											[total_forwarded_fetch_count] BIGINT,
 											[data_compression_desc] NVARCHAR(4000), 
 						                    [page_latch_wait_count] BIGINT,
 								            [page_latch_wait_in_ms] BIGINT,
@@ -32189,7 +32497,8 @@ ELSE IF (@Mode=1) /*Summarize*/
 											[partition_key_column_name], 
 											[filter_definition], 
 											[is_indexed_view], 
-											[is_primary_key], 
+											[is_primary_key],
+											[is_unique_constraint],
 											[is_XML], 
 											[is_spatial], 
 											[is_NC_columnstore], 
@@ -32229,6 +32538,7 @@ ELSE IF (@Mode=1) /*Summarize*/
 											[avg_page_lock_wait_in_ms], 
 											[total_index_lock_promotion_attempt_count], 
 											[total_index_lock_promotion_count], 
+											[total_forwarded_fetch_count],
 											[data_compression_desc], 
 						                    [page_latch_wait_count],
 								            [page_latch_wait_in_ms],
@@ -32250,6 +32560,9 @@ ELSE IF (@Mode=1) /*Summarize*/
 										ISNULL(i.index_name, '''') AS [Index Name],
                                         CASE 
 						                    WHEN i.is_primary_key = 1 AND i.index_definition <> ''[HEAP]''
+							                    THEN N''--ALTER TABLE '' + QUOTENAME(i.[database_name]) + N''.'' + QUOTENAME(i.[schema_name]) + N''.'' + QUOTENAME(i.[object_name]) +
+							                         N'' DROP CONSTRAINT '' + QUOTENAME(i.index_name) + N'';''
+						                    WHEN i.is_primary_key = 0 AND i.is_unique_constraint = 1 AND i.index_definition <> ''[HEAP]''
 							                    THEN N''--ALTER TABLE '' + QUOTENAME(i.[database_name]) + N''.'' + QUOTENAME(i.[schema_name]) + N''.'' + QUOTENAME(i.[object_name]) +
 							                         N'' DROP CONSTRAINT '' + QUOTENAME(i.index_name) + N'';''
 						                    WHEN i.is_primary_key = 0 AND i.index_definition <> ''[HEAP]''
@@ -32276,6 +32589,7 @@ ELSE IF (@Mode=1) /*Summarize*/
 										ISNULL(filter_definition, '''') AS [Filter Definition], 
 										is_indexed_view AS [Is Indexed View], 
 										is_primary_key AS [Is Primary Key],
+										is_unique_constraint AS [Is Unique Constraint],
 										is_XML AS [Is XML],
 										is_spatial AS [Is Spatial],
 										is_NC_columnstore AS [Is NC Columnstore],
@@ -32315,6 +32629,7 @@ ELSE IF (@Mode=1) /*Summarize*/
 										sz.avg_page_lock_wait_in_ms AS [Avg Page Lock Wait ms],
 										sz.total_index_lock_promotion_attempt_count AS [Lock Escalation Attempts],
 										sz.total_index_lock_promotion_count AS [Lock Escalations],
+										sz.total_forwarded_fetch_count AS [Forwarded Fetches],
 										sz.data_compression_desc AS [Data Compression],
 						                sz.page_latch_wait_count,
 								        sz.page_latch_wait_in_ms,
@@ -32369,6 +32684,7 @@ ELSE IF (@Mode=1) /*Summarize*/
 					ISNULL(filter_definition, '') AS [Filter Definition], 
 					is_indexed_view AS [Is Indexed View], 
 					is_primary_key AS [Is Primary Key],
+					is_unique_constraint AS [Is Unique Constraint] ,
 					is_XML AS [Is XML],
 					is_spatial AS [Is Spatial],
 					is_NC_columnstore AS [Is NC Columnstore],
@@ -32419,6 +32735,9 @@ ELSE IF (@Mode=1) /*Summarize*/
 					more_info AS [More Info],
                     CASE 
 						 WHEN i.is_primary_key = 1 AND i.index_definition <> '[HEAP]'
+							THEN N'--ALTER TABLE ' + QUOTENAME(i.[database_name]) + N'.' + QUOTENAME(i.[schema_name]) + N'.' + QUOTENAME(i.[object_name])
+							     + N' DROP CONSTRAINT ' + QUOTENAME(i.index_name) + N';'
+						 WHEN i.is_primary_key = 0 AND i.is_unique_constraint = 1 AND i.index_definition <> '[HEAP]'
 							THEN N'--ALTER TABLE ' + QUOTENAME(i.[database_name]) + N'.' + QUOTENAME(i.[schema_name]) + N'.' + QUOTENAME(i.[object_name])
 							     + N' DROP CONSTRAINT ' + QUOTENAME(i.index_name) + N';'
 						 WHEN i.is_primary_key = 0 AND i.index_definition <> '[HEAP]'
