@@ -34,11 +34,13 @@ This will install the scripts list above in the `master` database. The following
 
 > All jobs are created in the *disabled* state and must be *enabled*.
 
+## Find a bug?
+
+There's an [issue](https://github.com/nhlpa/FsTachyons/issues) for that.
+
 ## License
 
-[dba-in-a-box uses the GNU GENERAL PUBLIC LICENSE.](LICENSE.md)
-
-[*Back to top*](#header1)
+Built with ♥ by [NHLPA Engineering](https://github.com/nhlpa) in Toronto, ON. Licensed under [MIT](https://github.com/nhlpa/Falco.Markup/blob/master/LICENSE).
 
 [licence badge]:https://img.shields.io/badge/license-GNU-blue.svg
 [stars badge]:https://img.shields.io/github/stars/pimbrouwers/dba-in-a-box.svg
