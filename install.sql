@@ -10028,7 +10028,7 @@ AS
 	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 	
 
-	SELECT @Version = '8.10', @VersionDate = '20220718';
+	SELECT @Version = '8.11', @VersionDate = '20221013';
 	SET @OutputType = UPPER(@OutputType);
 
     IF(@VersionCheckMode = 1)
@@ -10415,7 +10415,6 @@ AS
 		/* If the server is Amazon RDS, skip checks that it doesn't allow */
 		IF LEFT(CAST(SERVERPROPERTY('ComputerNamePhysicalNetBIOS') AS VARCHAR(8000)), 8) = 'EC2AMAZ-'
 		   AND LEFT(CAST(SERVERPROPERTY('MachineName') AS VARCHAR(8000)), 8) = 'EC2AMAZ-'
-		   AND LEFT(CAST(SERVERPROPERTY('ServerName') AS VARCHAR(8000)), 8) = 'EC2AMAZ-'
 		   AND db_id('rdsadmin') IS NOT NULL
 		   AND EXISTS(SELECT * FROM master.sys.all_objects WHERE name IN ('rds_startup_tasks', 'rds_help_revlogin', 'rds_hexadecimal', 'rds_failover_tracking', 'rds_database_tracking', 'rds_track_change'))
 			BEGIN
@@ -10879,6 +10878,40 @@ AS
 			BEGIN
 
 				/*
+				Extract DBCC DBINFO data from the server. This data is used for check 2 using
+				the dbi_LastLogBackupTime field and check 68 using the dbi_LastKnownGood field.
+				NB: DBCC DBINFO is not available on AWS RDS databases so if the server is RDS
+				(which will have previously triggered inserting a checkID 223 record) and at
+				least one of the relevant checks is not being skipped then we can extract the
+				dbinfo information.
+				*/
+				IF NOT EXISTS ( SELECT 1 
+							FROM #BlitzResults 
+							WHERE CheckID = 223 AND URL = 'https://aws.amazon.com/rds/sqlserver/')
+					AND (
+							NOT EXISTS ( SELECT  1
+								FROM    #SkipChecks
+								WHERE   DatabaseName IS NULL AND CheckID = 2 )
+							OR NOT EXISTS ( SELECT  1
+								FROM    #SkipChecks
+								WHERE   DatabaseName IS NULL AND CheckID = 68 )
+					)
+					BEGIN
+
+						IF @Debug IN (1, 2) RAISERROR('Extracting DBCC DBINFO data (used in checks 2 and 68).', 0, 1, 68) WITH NOWAIT;
+
+						EXEC sp_MSforeachdb N'USE [?];
+							SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+							INSERT #DBCCs
+								(ParentObject,
+								Object,
+								Field,
+								Value)
+							EXEC (''DBCC DBInfo() With TableResults, NO_INFOMSGS'');
+							UPDATE #DBCCs SET DbName = N''?'' WHERE DbName IS NULL OPTION (RECOMPILE);';
+					END
+
+				/*
 				Our very first check! We'll put more comments in this one just to
 				explain exactly how it works. First, we check to see if we're
 				supposed to skip CheckID 1 (that's the check we're working on.)
@@ -11023,6 +11056,7 @@ AS
 										'https://www.brentozar.com/go/biglogs' AS URL ,
 										( 'The ' + CAST(CAST((SELECT ((SUM([mf].[size]) * 8.) / 1024.) FROM sys.[master_files] AS [mf] WHERE [mf].[database_id] = d.[database_id] AND [mf].[type_desc] = 'LOG') AS DECIMAL(18,2)) AS VARCHAR(30)) + 'MB log file has not been backed up in the last week.' ) AS Details
 								FROM    master.sys.databases d
+								LEFT JOIN #DBCCs ll On ll.DbName = d.name And ll.Field = 'dbi_LastLogBackupTime'
 								WHERE   d.recovery_model IN ( 1, 2 )
 										AND d.database_id NOT IN ( 2, 3 )
 										AND d.source_database_id IS NULL
@@ -11033,12 +11067,23 @@ AS
 																  DatabaseName
 															FROM  #SkipChecks
 															WHERE CheckID IS NULL OR CheckID = 2)
-										AND NOT EXISTS ( SELECT *
-														 FROM   msdb.dbo.backupset b
-														 WHERE  d.name COLLATE SQL_Latin1_General_CP1_CI_AS = b.database_name COLLATE SQL_Latin1_General_CP1_CI_AS
-																AND b.type = 'L'
-																AND b.backup_finish_date >= DATEADD(dd,
-																  -7, GETDATE()) );
+										AND	(
+												(
+													/* We couldn't get a value from the DBCC DBINFO data so let's check the msdb backup history information */
+														[ll].[Value] Is Null
+													AND NOT EXISTS ( SELECT *
+																	 FROM   msdb.dbo.backupset b
+																	 WHERE  d.name COLLATE SQL_Latin1_General_CP1_CI_AS = b.database_name COLLATE SQL_Latin1_General_CP1_CI_AS
+																				AND b.type = 'L'
+																				AND b.backup_finish_date >= DATEADD(dd,-7, GETDATE())
+																	)
+												)
+												OR
+												(
+													Convert(datetime,ll.Value) < DATEADD(dd,-7, GETDATE())
+												)
+
+											);
 					END;
 
 				/*
@@ -15462,11 +15507,16 @@ IF @ProductVersionMajor >= 10
 							'https://support.microsoft.com/en-us/kb/2033238' AS [URL] ,
 							( COALESCE(company, '') + ' - ' + COALESCE(description, '') + ' - ' + COALESCE(name, '') + ' - suspected dangerous third party module is installed.') AS [Details]
 							FROM sys.dm_os_loaded_modules
-							WHERE UPPER(name) LIKE UPPER('%\ENTAPI.DLL') /* McAfee VirusScan Enterprise */
+							WHERE UPPER(name) LIKE UPPER('%\ENTAPI.DLL') OR UPPER(name) LIKE '%MFEBOPK.SYS' /* McAfee VirusScan Enterprise */
 							OR UPPER(name) LIKE UPPER('%\HIPI.DLL') OR UPPER(name) LIKE UPPER('%\HcSQL.dll') OR UPPER(name) LIKE UPPER('%\HcApi.dll') OR UPPER(name) LIKE UPPER('%\HcThe.dll') /* McAfee Host Intrusion */
 							OR UPPER(name) LIKE UPPER('%\SOPHOS_DETOURED.DLL') OR UPPER(name) LIKE UPPER('%\SOPHOS_DETOURED_x64.DLL') OR UPPER(name) LIKE UPPER('%\SWI_IFSLSP_64.dll') OR UPPER(name) LIKE UPPER('%\SOPHOS~%.dll') /* Sophos AV */
-							OR UPPER(name) LIKE UPPER('%\PIOLEDB.DLL') OR UPPER(name) LIKE UPPER('%\PISDK.DLL'); /* OSISoft PI data access */
-
+							OR UPPER(name) LIKE UPPER('%\PIOLEDB.DLL') OR UPPER(name) LIKE UPPER('%\PISDK.DLL') /* OSISoft PI data access */
+							OR UPPER(name) LIKE UPPER('%ScriptControl%.dll') OR UPPER(name) LIKE UPPER('%umppc%.dll') /* CrowdStrike */
+							OR UPPER(name) LIKE UPPER('%perfiCrcPerfMonMgr.DLL') /* Trend Micro OfficeScan */
+							OR UPPER(name) LIKE UPPER('%NLEMSQL.SYS') /* NetLib Encryptionizer-Software. */
+							OR UPPER(name) LIKE UPPER('%MFETDIK.SYS') /* McAfee Anti-Virus Mini-Firewall */
+							OR UPPER(name) LIKE UPPER('%ANTIVIRUS%'); /* To pick up sqlmaggieAntiVirus_64.dll (malware) or anything else labelled AntiVirus */
+							/* MS docs link for blacklisted modules: https://learn.microsoft.com/en-us/troubleshoot/sql/performance/performance-consistency-issues-filter-drivers-modules */
 					END;
 
 			/*Find shrink database tasks*/
@@ -17276,15 +17326,16 @@ IF @ProductVersionMajor >= 10
 				
 				IF @Debug IN (1, 2) RAISERROR('Running CheckId [%d].', 0, 1, 68) WITH NOWAIT;
 				
-				EXEC sp_MSforeachdb N'USE [?];
-				SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-				INSERT #DBCCs
-					(ParentObject,
-					Object,
-					Field,
-					Value)
-				EXEC (''DBCC DBInfo() With TableResults, NO_INFOMSGS'');
-				UPDATE #DBCCs SET DbName = N''?'' WHERE DbName IS NULL OPTION (RECOMPILE);';
+				/* Removed as populating the #DBCCs table now done in advance as data is uses for multiple checks*/
+				--EXEC sp_MSforeachdb N'USE [?];
+				--SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+				--INSERT #DBCCs
+				--	(ParentObject,
+				--	Object,
+				--	Field,
+				--	Value)
+				--EXEC (''DBCC DBInfo() With TableResults, NO_INFOMSGS'');
+				--UPDATE #DBCCs SET DbName = N''?'' WHERE DbName IS NULL OPTION (RECOMPILE);';
 
 				WITH    DB2
 							AS ( SELECT DISTINCT
@@ -18335,7 +18386,6 @@ IF @ProductVersionMajor >= 10 AND  NOT EXISTS ( SELECT  1
 							-- If this is Amazon RDS, use rdsadmin.dbo.rds_read_error_log
 							IF LEFT(CAST(SERVERPROPERTY('ComputerNamePhysicalNetBIOS') AS VARCHAR(8000)), 8) = 'EC2AMAZ-'
 							   AND LEFT(CAST(SERVERPROPERTY('MachineName') AS VARCHAR(8000)), 8) = 'EC2AMAZ-'
-							   AND LEFT(CAST(SERVERPROPERTY('ServerName') AS VARCHAR(8000)), 8) = 'EC2AMAZ-'
 							   AND db_id('rdsadmin') IS NOT NULL
 							   AND EXISTS(SELECT * FROM master.sys.all_objects WHERE name IN ('rds_startup_tasks', 'rds_help_revlogin', 'rds_hexadecimal', 'rds_failover_tracking', 'rds_database_tracking', 'rds_track_change'))
 								BEGIN
@@ -19921,7 +19971,7 @@ SET NOCOUNT ON;
 SET STATISTICS XML OFF;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-SELECT @Version = '8.10', @VersionDate = '20220718';
+SELECT @Version = '8.11', @VersionDate = '20221013';
 SET @OutputType = UPPER(@OutputType);
 
 IF(@VersionCheckMode = 1)
@@ -27185,7 +27235,7 @@ SET NOCOUNT ON;
 SET STATISTICS XML OFF;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-SELECT @Version = '8.10', @VersionDate = '20220718';
+SELECT @Version = '8.11', @VersionDate = '20221013';
 SET @OutputType  = UPPER(@OutputType);
 
 IF(@VersionCheckMode = 1)
@@ -33497,54 +33547,57 @@ Parameters:
     end;
 go
 
-if object_id('dbo.sp_CaptureWaitStats') is null
+IF object_id('dbo.sp_CaptureWaitStats') IS NULL
   exec('create procedure dbo.sp_CaptureWaitStats as return 0;');
-go
+GO
 
-alter procedure dbo.sp_CaptureWaitStats
-as
-  set nocount on;
+ALTER PROCEDURE dbo.sp_CaptureWaitStats
+AS
+  SET nocount ON;
 
-  set xact_abort on;
+  SET xact_abort ON;
 
   -- capture
-  with waits as (
-    select
+  WITH
+  waits
+  AS
+  (
+    SELECT
       wait_type
-      ,wait_time_ms / 1000.0 as wait_time_s
-      ,(wait_time_ms - signal_wait_time_ms) / 1000.0 as cpu_delay_s
-      ,signal_wait_time_ms / 1000.0 as signal_wait_time_s
-      ,waiting_tasks_count as waiting_tasks
-      ,100.0 * wait_time_ms / sum(wait_time_ms) over () as wait_percent
-      ,row_number() over (order by wait_time_ms desc) as r
-    from
+      ,wait_time_ms / 1000.0 AS wait_time_s
+      ,(wait_time_ms - signal_wait_time_ms) / 1000.0 AS cpu_delay_s
+      ,signal_wait_time_ms / 1000.0 AS signal_wait_time_s
+      ,waiting_tasks_count AS waiting_tasks
+      ,100.0 * wait_time_ms / sum(wait_time_ms) OVER () AS wait_percent
+      ,row_number() OVER (ORDER BY wait_time_ms DESC) AS r
+    FROM
       sys.dm_os_wait_stats
-    where
-      wait_type not in (N'BROKER_EVENTHANDLER', N'BROKER_RECEIVE_WAITFOR', N'BROKER_TASK_STOP', N'BROKER_TO_FLUSH', N'BROKER_TRANSMITTER', N'CHECKPOINT_QUEUE', N'CHKPT', N'CLR_AUTO_EVENT', N'CLR_MANUAL_EVENT', N'CLR_SEMAPHORE', N'CXCONSUMER', N'DBMIRROR_DBM_EVENT', N'DBMIRROR_EVENTS_QUEUE', N'DBMIRROR_WORKER_QUEUE', N'DBMIRRORING_CMD', N'DIRTY_PAGE_POLL', N'DISPATCHER_QUEUE_SEMAPHORE', N'EXECSYNC', N'FSAGENT', N'FT_IFTS_SCHEDULER_IDLE_WAIT', N'FT_IFTSHC_MUTEX', N'HADR_CLUSAPI_CALL', N'HADR_FILESTREAM_IOMGR_IOCOMPLETION', N'HADR_LOGCAPTURE_WAIT', N'HADR_NOTIFICATION_DEQUEUE', N'HADR_TIMER_TASK', N'HADR_WORK_QUEUE', N'KSOURCE_WAKEUP', N'LAZYWRITER_SLEEP', N'LOGMGR_QUEUE', N'MEMORY_ALLOCATION_EXT', N'ONDEMAND_TASK_QUEUE', N'PARALLEL_REDO_DRAIN_WORKER', N'PARALLEL_REDO_LOG_CACHE', N'PARALLEL_REDO_TRAN_LIST', N'PARALLEL_REDO_WORKER_SYNC', N'PARALLEL_REDO_WORKER_WAIT_WORK', N'PREEMPTIVE_XE_GETTARGETSTATE', N'PWAIT_ALL_COMPONENTS_INITIALIZED', N'PWAIT_DIRECTLOGCONSUMER_GETNEXT', N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP', N'QDS_ASYNC_QUEUE', N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP', N'QDS_SHUTDOWN_QUEUE', N'REDO_THREAD_PENDING_WORK', N'REQUEST_FOR_DEADLOCK_SEARCH', N'RESOURCE_QUEUE', N'SERVER_IDLE_CHECK', N'SLEEP_BPOOL_FLUSH', N'SLEEP_DBSTARTUP', N'SLEEP_DCOMSTARTUP', N'SLEEP_MASTERDBREADY', N'SLEEP_MASTERMDREADY', N'SLEEP_MASTERUPGRADED', N'SLEEP_MSDBSTARTUP', N'SLEEP_SYSTEMTASK', N'SLEEP_TASK', N'SLEEP_TEMPDBSTARTUP', N'SNI_HTTP_ACCEPT', N'SP_SERVER_DIAGNOSTICS_SLEEP', N'SQLTRACE_BUFFER_FLUSH', N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP', N'SQLTRACE_WAIT_ENTRIES', N'WAIT_FOR_RESULTS', N'WAITFOR', N'WAITFOR_TASKSHUTDOWN', N'WAIT_XTP_RECOVERY', N'WAIT_XTP_HOST_WAIT', N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG', N'WAIT_XTP_CKPT_CLOSE', N'XE_DISPATCHER_JOIN', N'XE_DISPATCHER_WAIT', N'XE_TIMER_EVENT')
-      and waiting_tasks_count > 0
+    WHERE
+      wait_type NOT IN (N'BROKER_EVENTHANDLER', N'BROKER_RECEIVE_WAITFOR', N'BROKER_TASK_STOP', N'BROKER_TO_FLUSH', N'BROKER_TRANSMITTER', N'CHECKPOINT_QUEUE', N'CHKPT', N'CLR_AUTO_EVENT', N'CLR_MANUAL_EVENT', N'CLR_SEMAPHORE', N'CXCONSUMER', N'DBMIRROR_DBM_EVENT', N'DBMIRROR_EVENTS_QUEUE', N'DBMIRROR_WORKER_QUEUE', N'DBMIRRORING_CMD', N'DIRTY_PAGE_POLL', N'DISPATCHER_QUEUE_SEMAPHORE', N'EXECSYNC', N'FSAGENT', N'FT_IFTS_SCHEDULER_IDLE_WAIT', N'FT_IFTSHC_MUTEX', N'HADR_CLUSAPI_CALL', N'HADR_FILESTREAM_IOMGR_IOCOMPLETION', N'HADR_LOGCAPTURE_WAIT', N'HADR_NOTIFICATION_DEQUEUE', N'HADR_TIMER_TASK', N'HADR_WORK_QUEUE', N'KSOURCE_WAKEUP', N'LAZYWRITER_SLEEP', N'LOGMGR_QUEUE', N'MEMORY_ALLOCATION_EXT', N'ONDEMAND_TASK_QUEUE', N'PARALLEL_REDO_DRAIN_WORKER', N'PARALLEL_REDO_LOG_CACHE', N'PARALLEL_REDO_TRAN_LIST', N'PARALLEL_REDO_WORKER_SYNC', N'PARALLEL_REDO_WORKER_WAIT_WORK', N'PREEMPTIVE_XE_GETTARGETSTATE', N'PWAIT_ALL_COMPONENTS_INITIALIZED', N'PWAIT_DIRECTLOGCONSUMER_GETNEXT', N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP', N'QDS_ASYNC_QUEUE', N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP', N'QDS_SHUTDOWN_QUEUE', N'REDO_THREAD_PENDING_WORK', N'REQUEST_FOR_DEADLOCK_SEARCH', N'RESOURCE_QUEUE', N'SERVER_IDLE_CHECK', N'SLEEP_BPOOL_FLUSH', N'SLEEP_DBSTARTUP', N'SLEEP_DCOMSTARTUP', N'SLEEP_MASTERDBREADY', N'SLEEP_MASTERMDREADY', N'SLEEP_MASTERUPGRADED', N'SLEEP_MSDBSTARTUP', N'SLEEP_SYSTEMTASK', N'SLEEP_TASK', N'SLEEP_TEMPDBSTARTUP', N'SNI_HTTP_ACCEPT', N'SP_SERVER_DIAGNOSTICS_SLEEP', N'SQLTRACE_BUFFER_FLUSH', N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP', N'SQLTRACE_WAIT_ENTRIES', N'WAIT_FOR_RESULTS', N'WAITFOR', N'WAITFOR_TASKSHUTDOWN', N'WAIT_XTP_RECOVERY', N'WAIT_XTP_HOST_WAIT', N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG', N'WAIT_XTP_CKPT_CLOSE', N'XE_DISPATCHER_JOIN', N'XE_DISPATCHER_WAIT', N'XE_TIMER_EVENT')
+      AND waiting_tasks_count > 0
   )
-  insert into dbo.WaitStats
-  select
-    cast(getdate() as smalldatetime)
+INSERT INTO dbo.WaitStats
+SELECT
+  cast(getdate() AS SMALLDATETIME)
     ,max(w1.wait_type)
-    ,cast(max(w1.wait_time_s) as decimal(16, 2))
-    ,cast(max(w1.cpu_delay_s) as decimal(16, 2))
-    ,cast(max(w1.signal_wait_time_s) as decimal(16, 2))
+    ,cast(max(w1.wait_time_s) AS DECIMAL(16, 2))
+    ,cast(max(w1.cpu_delay_s) AS DECIMAL(16, 2))
+    ,cast(max(w1.signal_wait_time_s) AS DECIMAL(16, 2))
     ,max(w1.waiting_tasks)
-    ,cast(max(w1.wait_percent) as decimal(5, 2))
-    ,cast((max(w1.wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4))
-    ,cast((max(w1.cpu_delay_s) / max(w1.waiting_tasks)) as decimal(16, 4))
-    ,cast((max(w1.signal_wait_time_s) / max(w1.waiting_tasks)) as decimal(16, 4))
-  from
-    waits w1
-  inner join
-    waits w2
-    on w2.r <= w1.r
-  group by
+    ,cast(max(w1.wait_percent) AS DECIMAL(5, 2))
+    ,cast((max(w1.wait_time_s) / max(w1.waiting_tasks)) AS DECIMAL(16, 4))
+    ,cast((max(w1.cpu_delay_s) / max(w1.waiting_tasks)) AS DECIMAL(16, 4))
+    ,cast((max(w1.signal_wait_time_s) / max(w1.waiting_tasks)) AS DECIMAL(16, 4))
+FROM
+  waits w1
+  INNER JOIN
+  waits w2
+  ON w2.r <= w1.r
+GROUP BY
     w1.r
-  having
+HAVING
     sum(w2.wait_percent) - max(w1.wait_percent) < 95; -- percentage threshold
-go
+GO
 
 use msdb;
 go
